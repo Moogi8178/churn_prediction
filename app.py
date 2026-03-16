@@ -9,8 +9,15 @@ import pandas as pd
 import pickle
 import joblib
 import plotly.graph_objects as go
-import plotly.express as px
 from pathlib import Path
+
+# TensorFlow is optional — loaded lazily only when a .h5 file exists
+# This prevents ModuleNotFoundError on Streamlit Cloud if TF is not installed
+try:
+    import tensorflow as tf
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -193,28 +200,30 @@ hr { border-color: var(--border) !important; }
 # ── Model loading helpers ─────────────────────────────────────────────────────
 @st.cache_resource
 def load_models():
-    """Load serialised models. Returns (dnn, xgb, scaler) or None on failure."""
-    models = {}
-    for fname, key in [
-        ('churn_dnn_model.h5',    'dnn'),
-        ('churn_xgboost_model.pkl','xgb'),
-        ('scaler.pkl',             'scaler'),
-    ]:
-        p = Path(fname)
-        if p.exists():
-            if fname.endswith('.h5'):
-                try:
-                    import tensorflow as tf
-                    models[key] = tf.keras.models.load_model(fname)
-                except Exception:
-                    models[key] = None
-            elif fname.endswith('.pkl'):
-                try:
-                    models[key] = joblib.load(fname)
-                except Exception:
-                    models[key] = None
-        else:
-            models[key] = None
+    """Load serialised models. Returns dict with dnn/xgb/scaler keys (None if unavailable)."""
+    models = {'dnn': None, 'xgb': None, 'scaler': None}
+
+    # Load DNN — requires TensorFlow
+    if TF_AVAILABLE and Path('churn_dnn_model.h5').exists():
+        try:
+            models['dnn'] = tf.keras.models.load_model('churn_dnn_model.h5')
+        except Exception as e:
+            st.warning(f"Could not load DNN model: {e}")
+
+    # Load XGBoost
+    if Path('churn_xgboost_model.pkl').exists():
+        try:
+            models['xgb'] = joblib.load('churn_xgboost_model.pkl')
+        except Exception as e:
+            st.warning(f"Could not load XGBoost model: {e}")
+
+    # Load scaler
+    if Path('scaler.pkl').exists():
+        try:
+            models['scaler'] = joblib.load('scaler.pkl')
+        except Exception as e:
+            st.warning(f"Could not load scaler: {e}")
+
     return models
 
 
