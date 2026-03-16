@@ -60,9 +60,11 @@ html, body, [class*="css"] {
 }
 .app-header h1 {
     font-family: 'DM Serif Display', serif;
-    font-size: 2.2rem;
-    color: var(--gold2) !important;
-    margin: 0 0 0.3rem 0;
+    font-size: 2.6rem;
+    color: #FFE08A !important;
+    margin: 0;
+    letter-spacing: -0.5px;
+    text-shadow: 0 2px 12px rgba(232,201,122,0.15);
 }
 .app-header p { color: var(--muted) !important; font-size: 0.88rem; margin: 0; }
 
@@ -76,11 +78,13 @@ html, body, [class*="css"] {
 }
 .card-title {
     font-family: 'DM Serif Display', serif;
-    font-size: 1.05rem;
-    color: var(--gold2);
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #FFE08A;
     margin-bottom: 1rem;
     padding-bottom: .5rem;
     border-bottom: 1px solid var(--border);
+    letter-spacing: 0.2px;
 }
 
 /* Metric boxes */
@@ -508,8 +512,7 @@ with st.spinner("🔄 Loading dataset & training model — first run takes ~20 s
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <div class="app-header">
-  <h1>🏦 Customer Churn Prediction</h1>
-  <p>Meru University of Science &amp; Technology &nbsp;·&nbsp; BSc Data Science &nbsp;·&nbsp; Finley Barongo Magembe &nbsp;·&nbsp; CT204/109437/22</p>
+  <h1>Customer Churn</h1>
 </div>
 """, unsafe_allow_html=True)
 
@@ -576,7 +579,7 @@ if "🎯" in page:
         factors          = build_explanation(customer, prob, will_churn)
 
         # ── SECTION 1: Binary verdict ─────────────────────────────────────────
-        st.markdown("### 🔎 Prediction Result")
+        st.markdown('<h2 style="font-family:DM Serif Display,serif;color:#E8C97A;font-size:1.7rem;margin-bottom:1rem;border-bottom:2px solid #2A4A72;padding-bottom:0.5rem;">🔎 Prediction Result</h2>', unsafe_allow_html=True)
 
         col_v, col_p = st.columns([1, 1.6], gap="large")
 
@@ -630,7 +633,7 @@ if "🎯" in page:
         st.markdown("---")
 
         # ── SECTION 2: Factor-by-factor explanation ───────────────────────────
-        st.markdown("### 📋 Prediction Explanation")
+        st.markdown('<h2 style="font-family:DM Serif Display,serif;color:#E8C97A;font-size:1.7rem;margin-bottom:0.5rem;border-bottom:2px solid #2A4A72;padding-bottom:0.5rem;">📋 Prediction Explanation</h2>', unsafe_allow_html=True)
         st.markdown(
             f'<p style="color:#A8B8D0;font-size:0.9rem;margin-bottom:1rem;">'
             f'The following factors from this customer\'s profile influenced the prediction. '
@@ -653,7 +656,7 @@ if "🎯" in page:
         st.markdown("---")
 
         # ── SECTION 3: Retention recommendation ──────────────────────────────
-        st.markdown("### 💡 Retention Recommendation")
+        st.markdown('<h2 style="font-family:DM Serif Display,serif;color:#E8C97A;font-size:1.7rem;margin-bottom:1rem;border-bottom:2px solid #2A4A72;padding-bottom:0.5rem;">💡 Retention Recommendation</h2>', unsafe_allow_html=True)
 
         if will_churn:
             rec_color = "#E85555"
@@ -695,7 +698,7 @@ elif "📊" in page:
     if not ready:
         st.warning("Model not ready.")
     else:
-        st.markdown("### 📊 Model Performance — Gradient Boosting Classifier")
+        st.markdown('<h2 style="font-family:DM Serif Display,serif;color:#E8C97A;font-size:1.7rem;margin-bottom:0.5rem;border-bottom:2px solid #2A4A72;padding-bottom:0.5rem;">📊 Model Performance</h2>', unsafe_allow_html=True)
         st.markdown(
             '<p style="color:#A8B8D0;font-size:0.9rem;margin-bottom:1.5rem;">'
             'Evaluated on a held-out test set (20% of 10,000 records). '
@@ -788,9 +791,3 @@ elif "📊" in page:
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Footer ────────────────────────────────────────────────────────────────────
-st.markdown("""
-<hr>
-<p style="text-align:center;color:#4a6a8a;font-size:.78rem;margin-top:.5rem;">
-  Finley Barongo Magembe &nbsp;·&nbsp; CT204/109437/22 &nbsp;·&nbsp;
-  Meru University of Science and Technology &nbsp;·&nbsp; 2026
-</p>""", unsafe_allow_html=True)
