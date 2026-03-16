@@ -36,25 +36,45 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap');
 
 :root {
-    --navy:#0B1D3A; --card:#112244; --gold:#C9A84C; --gold2:#FFE08A;
-    --text:#FFFFFF; --muted:#C0CFDF; --border:#3A5A8A;
-    --red:#FF5555; --green:#2ECC8A; --amber:#FF9933;
+    --navy: #0B1D3A;
+    --card: #112244;
+    --gold: #C9A84C;
+    --gold2: #FFE08A;
+    --text: #FFFFFF;
+    --muted: #C0CFDF;
+    --border: #3A5A8A;
+    --red: #FF5555;
+    --green: #2ECC8A;
+    --amber: #FF9933;
 }
 
-/* ── Base ── */
-html, body, [class*="css"] {
+/* ── Force dark background everywhere ── */
+html, body,
+[class*="css"],
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewBlockContainer"],
+[data-testid="block-container"],
+.main,
+section[data-testid="stSidebar"],
+div[data-testid="stVerticalBlock"],
+div[data-testid="stHorizontalBlock"] {
+    background-color: #0B1D3A !important;
+    color: #FFFFFF !important;
     font-family: 'DM Sans', sans-serif !important;
-    background-color: var(--navy) !important;
-    color: var(--text) !important;
-    font-size: 16px !important;
 }
-.main .block-container { padding-top:2rem; padding-bottom:3rem; max-width:1050px; }
+.main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 3rem;
+    max-width: 1050px;
+    background-color: #0B1D3A !important;
+}
 
 /* ── Page Header ── */
 .page-header {
-    background: linear-gradient(135deg,#112244 0%,#1a3a6a 50%,#112244 100%);
-    border: 2px solid var(--border);
-    border-left: 6px solid var(--gold2);
+    background: #112244;
+    border: 2px solid #3A5A8A;
+    border-left: 6px solid #FFE08A;
     border-radius: 16px;
     padding: 2rem 2.5rem;
     margin-bottom: 2rem;
@@ -65,7 +85,7 @@ html, body, [class*="css"] {
     color: #FFE08A !important;
     margin: 0;
     letter-spacing: -0.5px;
-    text-shadow: 0 2px 16px rgba(255,224,138,0.25);
+    text-shadow: 0 2px 16px rgba(255,224,138,0.3);
 }
 
 /* ── Section Titles ── */
@@ -74,103 +94,119 @@ html, body, [class*="css"] {
     font-size: 1.6rem;
     font-weight: 700;
     color: #FFE08A;
-    background: linear-gradient(90deg, #1a3a6a 0%, transparent 100%);
-    padding: 0.7rem 1.2rem;
-    border-left: 5px solid #FFE08A;
+    background-color: #1a3a6a;
+    padding: 0.75rem 1.2rem;
+    border-left: 6px solid #FFE08A;
     border-radius: 0 8px 8px 0;
     margin: 2rem 0 1.2rem 0;
-    letter-spacing: 0.2px;
+    display: block;
 }
 
 /* ── Input Cards ── */
 .input-card {
-    background: var(--card);
-    border: 1.5px solid var(--border);
+    background-color: #112244 !important;
+    border: 1.5px solid #3A5A8A;
     border-radius: 14px;
     padding: 1.8rem 2rem;
     margin-bottom: 1.4rem;
 }
-.card-label {
-    font-family: 'DM Serif Display', serif;
-    font-size: 1.15rem;
-    font-weight: 700;
-    color: #FFE08A;
-    margin-bottom: 1.2rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border);
-    display: block;
-}
 
-/* ── All Labels ── */
+/* ── ALL text labels force white ── */
 label,
+.stSlider label,
+.stSelectbox label,
+.stNumberInput label,
+.stRadio label,
 [data-testid="stSlider"] label,
 [data-testid="stSelectbox"] label,
 [data-testid="stNumberInput"] label,
-[data-testid="stRadio"] label {
+[data-testid="stRadio"] label,
+[data-testid="stMarkdown"] p,
+p { 
     color: #FFFFFF !important;
     font-size: 1rem !important;
-    font-weight: 700 !important;
-    letter-spacing: 0.02em !important;
+    font-weight: 600 !important;
 }
-/* Slider value */
-[data-testid="stSlider"] [data-testid="stThumbValue"],
-[data-testid="stSlider"] div[class*="StyledThumbValue"] {
+
+/* Slider current value bubble */
+[data-testid="stSlider"] span,
+[data-testid="stSlider"] p {
     color: #FFE08A !important;
     font-weight: 700 !important;
     font-size: 1rem !important;
 }
+
 /* Select boxes */
-div[data-baseweb="select"]>div {
-    background: #1a3560 !important;
-    border: 1.5px solid var(--border) !important;
-    color: #FFFFFF !important;
+div[data-baseweb="select"] > div {
+    background-color: #1a3560 !important;
+    border: 1.5px solid #3A5A8A !important;
 }
-div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 600 !important; font-size: 1rem !important; }
-/* Number inputs */
-[data-testid="stNumberInput"] input {
-    background: #1a3560 !important;
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] div {
     color: #FFFFFF !important;
-    border: 1.5px solid var(--border) !important;
     font-weight: 600 !important;
     font-size: 1rem !important;
 }
-/* Radio options */
-[data-testid="stRadio"] > div label span { color: #FFFFFF !important; font-weight: 600 !important; }
+
+/* Number inputs */
+[data-testid="stNumberInput"] input {
+    background-color: #1a3560 !important;
+    color: #FFFFFF !important;
+    border: 1.5px solid #3A5A8A !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+}
+[data-testid="stNumberInput"] button {
+    background-color: #1a3560 !important;
+    color: #FFFFFF !important;
+    border-color: #3A5A8A !important;
+}
+
+/* Radio */
+[data-testid="stRadio"] label span { color: #FFFFFF !important; font-weight: 600 !important; font-size: 1rem !important; }
+[data-testid="stRadio"] > label    { color: #FFFFFF !important; font-weight: 700 !important; font-size: 1rem !important; }
 
 /* ── Metric Boxes ── */
 .mbox {
-    background: #1a3560;
-    border: 1.5px solid var(--border);
+    background-color: #1a3560;
+    border: 1.5px solid #3A5A8A;
     border-radius: 10px;
     padding: 1rem;
     text-align: center;
 }
 .mbox .lbl {
-    font-size: .75rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
-    letter-spacing: .12em;
+    letter-spacing: 0.12em;
     color: #C0CFDF;
-    margin-bottom: .4rem;
+    margin-bottom: 0.4rem;
     font-weight: 700;
+    display: block;
 }
-.mbox .val { font-family: 'DM Serif Display', serif; font-size: 1.7rem; line-height: 1; color: #FFE08A; }
+.mbox .val {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.7rem;
+    line-height: 1;
+    color: #FFE08A;
+    display: block;
+}
 
-/* ── Verdict ── */
+/* ── Verdict boxes ── */
 .verdict-yes {
-    background: linear-gradient(135deg,#3a0f0f,#2a0808);
-    border: 2.5px solid var(--red);
+    background-color: #2a0808;
+    border: 2.5px solid #FF5555;
     border-radius: 18px;
     padding: 2.5rem;
     text-align: center;
-    box-shadow: 0 0 30px rgba(255,85,85,0.15);
+    box-shadow: 0 0 30px rgba(255,85,85,0.2);
 }
 .verdict-no {
-    background: linear-gradient(135deg,#082d1a,#051f12);
-    border: 2.5px solid var(--green);
+    background-color: #052214;
+    border: 2.5px solid #2ECC8A;
     border-radius: 18px;
     padding: 2.5rem;
     text-align: center;
-    box-shadow: 0 0 30px rgba(46,204,138,0.15);
+    box-shadow: 0 0 30px rgba(46,204,138,0.2);
 }
 .verdict-word {
     font-family: 'DM Serif Display', serif;
@@ -182,10 +218,10 @@ div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 600 !i
 .verdict-desc { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.04em; }
 .verdict-prob { font-size: 0.92rem; margin-top: 1rem; color: #C0CFDF; line-height: 1.5; }
 
-/* ── Prob Card ── */
+/* ── Prob card ── */
 .prob-card {
-    background: var(--card);
-    border: 1.5px solid var(--border);
+    background-color: #112244;
+    border: 1.5px solid #3A5A8A;
     border-radius: 14px;
     padding: 1.8rem;
 }
@@ -196,13 +232,14 @@ div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 600 !i
     color: #FFE08A;
     margin-bottom: 1.2rem;
     padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid #3A5A8A;
+    display: block;
 }
 
-/* ── Explanation Items ── */
+/* ── Explanation items ── */
 .exp-risk {
-    background: #2d0f0f;
-    border-left: 5px solid var(--red);
+    background-color: #2d0f0f;
+    border-left: 5px solid #FF5555;
     border-radius: 0 10px 10px 0;
     padding: 1rem 1.2rem;
     margin-bottom: 0.8rem;
@@ -211,8 +248,8 @@ div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 600 !i
     color: #FFFFFF;
 }
 .exp-warn {
-    background: #2d1a06;
-    border-left: 5px solid var(--amber);
+    background-color: #2d1a06;
+    border-left: 5px solid #FF9933;
     border-radius: 0 10px 10px 0;
     padding: 1rem 1.2rem;
     margin-bottom: 0.8rem;
@@ -221,8 +258,8 @@ div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 600 !i
     color: #FFFFFF;
 }
 .exp-safe {
-    background: #062d16;
-    border-left: 5px solid var(--green);
+    background-color: #062d16;
+    border-left: 5px solid #2ECC8A;
     border-radius: 0 10px 10px 0;
     padding: 1rem 1.2rem;
     margin-bottom: 0.8rem;
@@ -231,10 +268,10 @@ div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 600 !i
     color: #FFFFFF;
 }
 
-/* ── Rec Card ── */
+/* ── Rec card ── */
 .rec-card {
-    background: var(--card);
-    border: 1.5px solid var(--border);
+    background-color: #112244;
+    border: 1.5px solid #3A5A8A;
     border-radius: 14px;
     padding: 1.5rem 1.8rem;
 }
@@ -248,12 +285,12 @@ div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 600 !i
 }
 .rec-item:last-child { border-bottom: none; }
 
-/* ── Summary Table ── */
+/* ── Summary table ── */
 .summary-table { width:100%; border-collapse:collapse; font-size:0.95rem; }
-.summary-table td { padding:0.7rem 0.9rem; border-bottom:1px solid #1e3a5a; color: #FFFFFF; }
-.summary-table td:first-child { color: #C0CFDF; width:45%; font-weight:700; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em; }
+.summary-table td { padding:0.7rem 0.9rem; border-bottom:1px solid #1e3a5a; color:#FFFFFF; }
+.summary-table td:first-child { color:#C0CFDF; width:45%; font-weight:700; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em; }
 
-/* ── Predict Button ── */
+/* ── Predict button ── */
 .predict-btn > button {
     background: linear-gradient(135deg,#C9A84C,#FFE08A) !important;
     color: #0B1D3A !important;
@@ -267,22 +304,20 @@ div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 600 !i
     text-transform: uppercase;
 }
 
-/* ── Back Button ── */
+/* ── Back button ── */
 .back-btn > button {
-    background: #1a3560 !important;
+    background-color: #1a3560 !important;
     color: #FFE08A !important;
     font-weight: 700 !important;
-    border: 1.5px solid var(--border) !important;
+    border: 1.5px solid #3A5A8A !important;
     border-radius: 8px !important;
     padding: 0.6rem 1.8rem !important;
     font-size: 0.95rem !important;
 }
 
-/* ── General ── */
-p { color: #FFFFFF !important; font-size: 0.95rem; }
 strong { color: #FFE08A !important; }
-hr { border-color: var(--border) !important; }
-[data-testid="stSidebarNav"]   { display: none; }
+hr { border-color: #3A5A8A !important; }
+[data-testid="stSidebarNav"]     { display: none; }
 [data-testid="collapsedControl"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
