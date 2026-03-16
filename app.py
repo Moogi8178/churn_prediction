@@ -33,134 +33,257 @@ if "page" not in st.session_state:
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap');
+
 :root {
-    --navy:#0B1D3A; --card:#0f2548; --gold:#C9A84C; --gold2:#FFE08A;
-    --text:#E8EDF5; --muted:#A8B8D0; --border:#2A4A72;
-    --red:#E85555; --green:#3DBE8A; --amber:#F0922B;
+    --navy:#0B1D3A; --card:#112244; --gold:#C9A84C; --gold2:#FFE08A;
+    --text:#FFFFFF; --muted:#C0CFDF; --border:#3A5A8A;
+    --red:#FF5555; --green:#2ECC8A; --amber:#FF9933;
 }
+
+/* ── Base ── */
 html, body, [class*="css"] {
     font-family: 'DM Sans', sans-serif !important;
     background-color: var(--navy) !important;
     color: var(--text) !important;
+    font-size: 16px !important;
 }
 .main .block-container { padding-top:2rem; padding-bottom:3rem; max-width:1050px; }
 
-/* Header */
+/* ── Page Header ── */
 .page-header {
-    background: linear-gradient(135deg,#0f2548 0%,#1a3a6a 50%,#0f2548 100%);
-    border: 1px solid var(--border);
-    border-left: 5px solid var(--gold2);
+    background: linear-gradient(135deg,#112244 0%,#1a3a6a 50%,#112244 100%);
+    border: 2px solid var(--border);
+    border-left: 6px solid var(--gold2);
     border-radius: 16px;
-    padding: 1.8rem 2.5rem;
+    padding: 2rem 2.5rem;
     margin-bottom: 2rem;
 }
 .page-header h1 {
     font-family: 'DM Serif Display', serif;
-    font-size: 2.6rem;
-    color: var(--gold2) !important;
+    font-size: 3rem;
+    color: #FFE08A !important;
     margin: 0;
     letter-spacing: -0.5px;
+    text-shadow: 0 2px 16px rgba(255,224,138,0.25);
 }
 
-/* Section titles */
+/* ── Section Titles ── */
 .section-title {
     font-family: 'DM Serif Display', serif;
-    font-size: 1.4rem;
+    font-size: 1.6rem;
     font-weight: 700;
-    color: var(--gold2);
-    margin: 2rem 0 1rem 0;
-    padding-bottom: 0.5rem;
-    border-bottom: 2px solid var(--border);
+    color: #FFE08A;
+    background: linear-gradient(90deg, #1a3a6a 0%, transparent 100%);
+    padding: 0.7rem 1.2rem;
+    border-left: 5px solid #FFE08A;
+    border-radius: 0 8px 8px 0;
+    margin: 2rem 0 1.2rem 0;
+    letter-spacing: 0.2px;
 }
 
-/* Input card */
+/* ── Input Cards ── */
 .input-card {
     background: var(--card);
-    border: 1px solid var(--border);
+    border: 1.5px solid var(--border);
     border-radius: 14px;
     padding: 1.8rem 2rem;
     margin-bottom: 1.4rem;
 }
-
-/* Labels */
-label { color: #D0DCEA !important; font-size:0.92rem !important; font-weight:600 !important; }
-div[data-baseweb="select"]>div { background:#152d55 !important; border-color:var(--border) !important; }
-div[data-baseweb="select"] span { color:#FFFFFF !important; font-weight:500 !important; }
-[data-testid="stNumberInput"] input {
-    background:#152d55 !important; color:#FFFFFF !important;
-    border-color:var(--border) !important; font-weight:500 !important;
+.card-label {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #FFE08A;
+    margin-bottom: 1.2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    display: block;
 }
 
-/* Metric boxes */
-.mbox { background:#152d55; border:1px solid var(--border); border-radius:10px; padding:0.9rem; text-align:center; }
-.mbox .lbl { font-size:.7rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:.3rem; font-weight:500; }
-.mbox .val { font-family:'DM Serif Display',serif; font-size:1.6rem; line-height:1; }
+/* ── All Labels ── */
+label,
+[data-testid="stSlider"] label,
+[data-testid="stSelectbox"] label,
+[data-testid="stNumberInput"] label,
+[data-testid="stRadio"] label {
+    color: #FFFFFF !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em !important;
+}
+/* Slider value */
+[data-testid="stSlider"] [data-testid="stThumbValue"],
+[data-testid="stSlider"] div[class*="StyledThumbValue"] {
+    color: #FFE08A !important;
+    font-weight: 700 !important;
+    font-size: 1rem !important;
+}
+/* Select boxes */
+div[data-baseweb="select"]>div {
+    background: #1a3560 !important;
+    border: 1.5px solid var(--border) !important;
+    color: #FFFFFF !important;
+}
+div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 600 !important; font-size: 1rem !important; }
+/* Number inputs */
+[data-testid="stNumberInput"] input {
+    background: #1a3560 !important;
+    color: #FFFFFF !important;
+    border: 1.5px solid var(--border) !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+}
+/* Radio options */
+[data-testid="stRadio"] > div label span { color: #FFFFFF !important; font-weight: 600 !important; }
 
-/* Verdict */
+/* ── Metric Boxes ── */
+.mbox {
+    background: #1a3560;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    text-align: center;
+}
+.mbox .lbl {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: #C0CFDF;
+    margin-bottom: .4rem;
+    font-weight: 700;
+}
+.mbox .val { font-family: 'DM Serif Display', serif; font-size: 1.7rem; line-height: 1; color: #FFE08A; }
+
+/* ── Verdict ── */
 .verdict-yes {
-    background: linear-gradient(135deg,#3a0f0f,#2a0a0a);
-    border: 2px solid var(--red);
+    background: linear-gradient(135deg,#3a0f0f,#2a0808);
+    border: 2.5px solid var(--red);
     border-radius: 18px;
     padding: 2.5rem;
     text-align: center;
+    box-shadow: 0 0 30px rgba(255,85,85,0.15);
 }
 .verdict-no {
-    background: linear-gradient(135deg,#0a2d1f,#082214);
-    border: 2px solid var(--green);
+    background: linear-gradient(135deg,#082d1a,#051f12);
+    border: 2.5px solid var(--green);
     border-radius: 18px;
     padding: 2.5rem;
     text-align: center;
+    box-shadow: 0 0 30px rgba(46,204,138,0.15);
 }
-.verdict-word { font-family:'DM Serif Display',serif; font-size:5rem; font-weight:700; line-height:1; margin-bottom:0.5rem; }
-.verdict-desc { font-size:1.1rem; font-weight:600; letter-spacing:0.04em; }
-.verdict-prob { font-size:0.9rem; margin-top:1rem; color:#b0b8c8; }
+.verdict-word {
+    font-family: 'DM Serif Display', serif;
+    font-size: 5.5rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+}
+.verdict-desc { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.04em; }
+.verdict-prob { font-size: 0.92rem; margin-top: 1rem; color: #C0CFDF; line-height: 1.5; }
 
-/* Prob card */
-.prob-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:1.8rem; }
-.prob-card-title { font-family:'DM Serif Display',serif; font-size:1.15rem; font-weight:700; color:var(--gold2); margin-bottom:1.2rem; padding-bottom:0.5rem; border-bottom:1px solid var(--border); }
+/* ── Prob Card ── */
+.prob-card {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 1.8rem;
+}
+.prob-card-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #FFE08A;
+    margin-bottom: 1.2rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
 
-/* Explanation items */
-.exp-risk { background:#2d0f0f; border-left:4px solid var(--red);   border-radius:0 10px 10px 0; padding:0.9rem 1.1rem; margin-bottom:0.7rem; font-size:0.9rem; line-height:1.6; }
-.exp-warn { background:#2d1a08; border-left:4px solid var(--amber); border-radius:0 10px 10px 0; padding:0.9rem 1.1rem; margin-bottom:0.7rem; font-size:0.9rem; line-height:1.6; }
-.exp-safe { background:#082d18; border-left:4px solid var(--green); border-radius:0 10px 10px 0; padding:0.9rem 1.1rem; margin-bottom:0.7rem; font-size:0.9rem; line-height:1.6; }
+/* ── Explanation Items ── */
+.exp-risk {
+    background: #2d0f0f;
+    border-left: 5px solid var(--red);
+    border-radius: 0 10px 10px 0;
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: #FFFFFF;
+}
+.exp-warn {
+    background: #2d1a06;
+    border-left: 5px solid var(--amber);
+    border-radius: 0 10px 10px 0;
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: #FFFFFF;
+}
+.exp-safe {
+    background: #062d16;
+    border-left: 5px solid var(--green);
+    border-radius: 0 10px 10px 0;
+    padding: 1rem 1.2rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: #FFFFFF;
+}
 
-/* Rec card */
-.rec-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:1.5rem 1.8rem; }
-.rec-item { padding:0.65rem 0; border-bottom:1px solid #1e3a5a; font-size:0.92rem; line-height:1.5; }
-.rec-item:last-child { border-bottom:none; }
+/* ── Rec Card ── */
+.rec-card {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem 1.8rem;
+}
+.rec-item {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #1e3a5a;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #FFFFFF;
+    font-weight: 500;
+}
+.rec-item:last-child { border-bottom: none; }
 
-/* Summary table */
-.summary-table { width:100%; border-collapse:collapse; font-size:0.88rem; color:var(--text); }
-.summary-table td { padding:0.6rem 0.8rem; border-bottom:1px solid #1e3a5a; }
-.summary-table td:first-child { color:var(--muted); width:45%; font-weight:500; }
+/* ── Summary Table ── */
+.summary-table { width:100%; border-collapse:collapse; font-size:0.95rem; }
+.summary-table td { padding:0.7rem 0.9rem; border-bottom:1px solid #1e3a5a; color: #FFFFFF; }
+.summary-table td:first-child { color: #C0CFDF; width:45%; font-weight:700; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em; }
 
-/* Predict button */
+/* ── Predict Button ── */
 .predict-btn > button {
     background: linear-gradient(135deg,#C9A84C,#FFE08A) !important;
     color: #0B1D3A !important;
-    font-size: 1.15rem !important;
+    font-size: 1.2rem !important;
     font-weight: 800 !important;
     border: none !important;
     border-radius: 10px !important;
-    padding: 0.85rem 3rem !important;
+    padding: 0.9rem 3rem !important;
     width: 100%;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
 }
 
-/* Back button */
+/* ── Back Button ── */
 .back-btn > button {
-    background: #152d55 !important;
-    color: var(--gold2) !important;
+    background: #1a3560 !important;
+    color: #FFE08A !important;
     font-weight: 700 !important;
-    border: 1px solid var(--border) !important;
+    border: 1.5px solid var(--border) !important;
     border-radius: 8px !important;
-    padding: 0.55rem 1.5rem !important;
+    padding: 0.6rem 1.8rem !important;
+    font-size: 0.95rem !important;
 }
 
+/* ── General ── */
+p { color: #FFFFFF !important; font-size: 0.95rem; }
+strong { color: #FFE08A !important; }
 hr { border-color: var(--border) !important; }
-[data-testid="stSidebarNav"] { display: none; }
-[data-testid="collapsedControl"]  { display: none; }
+[data-testid="stSidebarNav"]   { display: none; }
+[data-testid="collapsedControl"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -433,7 +556,7 @@ elif st.session_state["page"] == "results":
         st.markdown('<div class="prob-card">', unsafe_allow_html=True)
         st.markdown('<div class="prob-card-title">📈 Churn Probability Score</div>', unsafe_allow_html=True)
         st.pyplot(prob_bar_fig(prob, will_churn), use_container_width=True)
-        st.markdown('<p style="font-size:0.78rem;color:#A8B8D0;margin:0.3rem 0 1rem 0;">Dashed line = 50% decision threshold (YES if above, NO if below)</p>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:0.88rem;color:#C0CFDF;font-weight:500;margin:0.3rem 0 1rem 0;">Dashed line = 50% decision threshold &mdash; YES if above, NO if below</p>', unsafe_allow_html=True)
         m1, m2, m3 = st.columns(3)
         with m1: st.markdown(f'<div class="mbox"><div class="lbl">Probability</div><div class="val" style="color:{verdict_col};">{prob*100:.1f}%</div></div>', unsafe_allow_html=True)
         with m2: st.markdown(f'<div class="mbox"><div class="lbl">Verdict</div><div class="val" style="font-size:1.1rem;color:{verdict_col};">{verdict_txt}</div></div>', unsafe_allow_html=True)
@@ -442,7 +565,7 @@ elif st.session_state["page"] == "results":
 
     # ── EXPLANATION ───────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">📋 Why This Prediction?</div>', unsafe_allow_html=True)
-    st.markdown('<p style="color:#A8B8D0;font-size:0.9rem;margin-bottom:1.2rem;">Each factor below shows how this customer\'s profile influenced the prediction. Risk factors are shown first.</p>', unsafe_allow_html=True)
+    st.markdown('<p style="color:#C0CFDF;font-size:1rem;font-weight:500;margin-bottom:1.2rem;">Each factor below shows how this customer\'s profile influenced the prediction. Risk factors are shown first.</p>', unsafe_allow_html=True)
 
     css_map = {"risk":"exp-risk","warn":"exp-warn","safe":"exp-safe"}
     half = (len(factors) + 1) // 2
