@@ -3,6 +3,7 @@ Customer Churn Prediction — Streamlit Deployment App
 Meru University of Science & Technology | Finley Barongo Magembe
 """
 
+# ── Core imports (always available on Streamlit Cloud) ───────────────────────
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -11,13 +12,24 @@ import joblib
 import plotly.graph_objects as go
 from pathlib import Path
 
-# TensorFlow is optional — loaded lazily only when a .h5 file exists
-# This prevents ModuleNotFoundError on Streamlit Cloud if TF is not installed
+# ── Optional — each wrapped so a missing package never crashes the app ────────
 try:
     import tensorflow as tf
     TF_AVAILABLE = True
-except ImportError:
+except Exception:
     TF_AVAILABLE = False
+
+try:
+    from xgboost import XGBClassifier   # noqa: F401
+    XGB_AVAILABLE = True
+except Exception:
+    XGB_AVAILABLE = False
+
+try:
+    from sklearn.preprocessing import StandardScaler  # noqa: F401
+    SK_AVAILABLE = True
+except Exception:
+    SK_AVAILABLE = False
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -200,29 +212,29 @@ hr { border-color: var(--border) !important; }
 # ── Model loading helpers ─────────────────────────────────────────────────────
 @st.cache_resource
 def load_models():
-    """Load serialised models. Returns dict with dnn/xgb/scaler keys (None if unavailable)."""
+    """Load serialised models safely. Falls back to demo mode if files missing."""
     models = {'dnn': None, 'xgb': None, 'scaler': None}
 
-    # Load DNN — requires TensorFlow
-    if TF_AVAILABLE and Path('churn_dnn_model.h5').exists():
-        try:
-            models['dnn'] = tf.keras.models.load_model('churn_dnn_model.h5')
-        except Exception as e:
-            st.warning(f"Could not load DNN model: {e}")
-
-    # Load XGBoost
-    if Path('churn_xgboost_model.pkl').exists():
-        try:
-            models['xgb'] = joblib.load('churn_xgboost_model.pkl')
-        except Exception as e:
-            st.warning(f"Could not load XGBoost model: {e}")
-
-    # Load scaler
+    # ── Scaler (scikit-learn) ─────────────────────────────────────────────────
     if Path('scaler.pkl').exists():
         try:
             models['scaler'] = joblib.load('scaler.pkl')
         except Exception as e:
-            st.warning(f"Could not load scaler: {e}")
+            st.sidebar.warning(f"scaler.pkl load failed: {e}")
+
+    # ── XGBoost model ─────────────────────────────────────────────────────────
+    if Path('churn_xgboost_model.pkl').exists():
+        try:
+            models['xgb'] = joblib.load('churn_xgboost_model.pkl')
+        except Exception as e:
+            st.sidebar.warning(f"XGBoost model load failed: {e}")
+
+    # ── DNN (TensorFlow) — only attempt if TF imported successfully ───────────
+    if TF_AVAILABLE and Path('churn_dnn_model.h5').exists():
+        try:
+            models['dnn'] = tf.keras.models.load_model('churn_dnn_model.h5')
+        except Exception as e:
+            st.sidebar.warning(f"DNN model load failed: {e}")
 
     return models
 
