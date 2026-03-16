@@ -1,5 +1,7 @@
 """
-Customer Churn Prediction — Page 1: Input Form
+Customer Churn Prediction
+Single-file multipage app using session_state for navigation.
+No st.switch_page() — works on all Streamlit Cloud versions.
 """
 
 import streamlit as st
@@ -16,12 +18,17 @@ from sklearn.metrics import (
     f1_score, roc_auc_score, confusion_matrix,
 )
 
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Customer Churn Prediction",
     page_icon="🏦",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# ── Initialise navigation state ───────────────────────────────────────────────
+if "page" not in st.session_state:
+    st.session_state["page"] = "input"   # "input" | "results"
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -37,16 +44,16 @@ html, body, [class*="css"] {
     background-color: var(--navy) !important;
     color: var(--text) !important;
 }
-.main .block-container { padding-top: 2rem; padding-bottom: 3rem; max-width: 960px; }
+.main .block-container { padding-top:2rem; padding-bottom:3rem; max-width:1050px; }
 
 /* Header */
 .page-header {
-    background: linear-gradient(135deg, #0f2548 0%, #1a3a6a 50%, #0f2548 100%);
+    background: linear-gradient(135deg,#0f2548 0%,#1a3a6a 50%,#0f2548 100%);
     border: 1px solid var(--border);
     border-left: 5px solid var(--gold2);
     border-radius: 16px;
-    padding: 2rem 2.5rem;
-    margin-bottom: 2.5rem;
+    padding: 1.8rem 2.5rem;
+    margin-bottom: 2rem;
 }
 .page-header h1 {
     font-family: 'DM Serif Display', serif;
@@ -56,13 +63,13 @@ html, body, [class*="css"] {
     letter-spacing: -0.5px;
 }
 
-/* Section title */
+/* Section titles */
 .section-title {
     font-family: 'DM Serif Display', serif;
-    font-size: 1.3rem;
+    font-size: 1.4rem;
     font-weight: 700;
     color: var(--gold2);
-    margin: 1.8rem 0 1rem 0;
+    margin: 2rem 0 1rem 0;
     padding-bottom: 0.5rem;
     border-bottom: 2px solid var(--border);
 }
@@ -72,35 +79,66 @@ html, body, [class*="css"] {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 14px;
-    padding: 2rem;
-    margin-bottom: 1.5rem;
+    padding: 1.8rem 2rem;
+    margin-bottom: 1.4rem;
 }
 
 /* Labels */
-label, .stSelectbox label, .stSlider label,
-.stNumberInput label, .stRadio label {
-    color: #D0DCEA !important;
-    font-size: 0.92rem !important;
-    font-weight: 600 !important;
-}
-div[data-baseweb="select"] > div {
-    background: #152d55 !important;
-    border-color: var(--border) !important;
-    color: #FFFFFF !important;
-}
-div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 500 !important; }
+label { color: #D0DCEA !important; font-size:0.92rem !important; font-weight:600 !important; }
+div[data-baseweb="select"]>div { background:#152d55 !important; border-color:var(--border) !important; }
+div[data-baseweb="select"] span { color:#FFFFFF !important; font-weight:500 !important; }
 [data-testid="stNumberInput"] input {
-    background: #152d55 !important;
-    color: #FFFFFF !important;
-    border-color: var(--border) !important;
-    font-weight: 500 !important;
+    background:#152d55 !important; color:#FFFFFF !important;
+    border-color:var(--border) !important; font-weight:500 !important;
 }
 
+/* Metric boxes */
+.mbox { background:#152d55; border:1px solid var(--border); border-radius:10px; padding:0.9rem; text-align:center; }
+.mbox .lbl { font-size:.7rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:.3rem; font-weight:500; }
+.mbox .val { font-family:'DM Serif Display',serif; font-size:1.6rem; line-height:1; }
+
+/* Verdict */
+.verdict-yes {
+    background: linear-gradient(135deg,#3a0f0f,#2a0a0a);
+    border: 2px solid var(--red);
+    border-radius: 18px;
+    padding: 2.5rem;
+    text-align: center;
+}
+.verdict-no {
+    background: linear-gradient(135deg,#0a2d1f,#082214);
+    border: 2px solid var(--green);
+    border-radius: 18px;
+    padding: 2.5rem;
+    text-align: center;
+}
+.verdict-word { font-family:'DM Serif Display',serif; font-size:5rem; font-weight:700; line-height:1; margin-bottom:0.5rem; }
+.verdict-desc { font-size:1.1rem; font-weight:600; letter-spacing:0.04em; }
+.verdict-prob { font-size:0.9rem; margin-top:1rem; color:#b0b8c8; }
+
+/* Prob card */
+.prob-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:1.8rem; }
+.prob-card-title { font-family:'DM Serif Display',serif; font-size:1.15rem; font-weight:700; color:var(--gold2); margin-bottom:1.2rem; padding-bottom:0.5rem; border-bottom:1px solid var(--border); }
+
+/* Explanation items */
+.exp-risk { background:#2d0f0f; border-left:4px solid var(--red);   border-radius:0 10px 10px 0; padding:0.9rem 1.1rem; margin-bottom:0.7rem; font-size:0.9rem; line-height:1.6; }
+.exp-warn { background:#2d1a08; border-left:4px solid var(--amber); border-radius:0 10px 10px 0; padding:0.9rem 1.1rem; margin-bottom:0.7rem; font-size:0.9rem; line-height:1.6; }
+.exp-safe { background:#082d18; border-left:4px solid var(--green); border-radius:0 10px 10px 0; padding:0.9rem 1.1rem; margin-bottom:0.7rem; font-size:0.9rem; line-height:1.6; }
+
+/* Rec card */
+.rec-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:1.5rem 1.8rem; }
+.rec-item { padding:0.65rem 0; border-bottom:1px solid #1e3a5a; font-size:0.92rem; line-height:1.5; }
+.rec-item:last-child { border-bottom:none; }
+
+/* Summary table */
+.summary-table { width:100%; border-collapse:collapse; font-size:0.88rem; color:var(--text); }
+.summary-table td { padding:0.6rem 0.8rem; border-bottom:1px solid #1e3a5a; }
+.summary-table td:first-child { color:var(--muted); width:45%; font-weight:500; }
+
 /* Predict button */
-.stButton > button {
-    background: linear-gradient(135deg, #C9A84C, #FFE08A) !important;
+.predict-btn > button {
+    background: linear-gradient(135deg,#C9A84C,#FFE08A) !important;
     color: #0B1D3A !important;
-    font-family: 'DM Sans', sans-serif !important;
     font-size: 1.15rem !important;
     font-weight: 800 !important;
     border: none !important;
@@ -108,19 +146,27 @@ div[data-baseweb="select"] span { color: #FFFFFF !important; font-weight: 500 !i
     padding: 0.85rem 3rem !important;
     width: 100%;
     letter-spacing: 0.04em;
-    margin-top: 1rem;
 }
-.stButton > button:hover { opacity: 0.9; transform: translateY(-1px); }
+
+/* Back button */
+.back-btn > button {
+    background: #152d55 !important;
+    color: var(--gold2) !important;
+    font-weight: 700 !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    padding: 0.55rem 1.5rem !important;
+}
 
 hr { border-color: var(--border) !important; }
-p, span { color: var(--text); }
-
-/* Hide default sidebar nav */
 [data-testid="stSidebarNav"] { display: none; }
+[data-testid="collapsedControl"]  { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Data & Model ──────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# MODEL TRAINING
+# ══════════════════════════════════════════════════════════════════════════════
 DATA_URL = (
     "https://gist.githubusercontent.com/arjunrao796123/"
     "7c30f2b6d4a3a3746b0154260a7f46e8/raw/"
@@ -134,8 +180,8 @@ def load_data():
 @st.cache_resource(show_spinner=False)
 def train_model():
     df = load_data()
-    drop_cols = [c for c in ["RowNumber", "CustomerId", "Surname"] if c in df.columns]
-    df = df.drop(columns=drop_cols).rename(columns={"Churn": "Exited"})
+    drop_cols = [c for c in ["RowNumber","CustomerId","Surname"] if c in df.columns]
+    df = df.drop(columns=drop_cols).rename(columns={"Churn":"Exited"})
     le = LabelEncoder()
     df["Gender"] = le.fit_transform(df["Gender"])
     df = pd.get_dummies(df, columns=["Geography"], drop_first=False)
@@ -148,7 +194,9 @@ def train_model():
     scaler = StandardScaler()
     X_tr_sc = scaler.fit_transform(X_tr)
     X_te_sc = scaler.transform(X_te)
-    model = GradientBoostingClassifier(n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.8, random_state=42)
+    model = GradientBoostingClassifier(
+        n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.8, random_state=42
+    )
     model.fit(X_tr_sc, y_tr)
     y_pred  = model.predict(X_te_sc)
     y_proba = model.predict_proba(X_te_sc)[:, 1]
@@ -162,89 +210,309 @@ def train_model():
     cm = confusion_matrix(y_te, y_pred)
     return model, scaler, le, feat_names, metrics, cm
 
-# Train on load
-with st.spinner("🔄 Training model — first run takes ~20 seconds…"):
+with st.spinner("🔄 Loading model — first run takes ~20 seconds…"):
     try:
         model, scaler, le, feat_names, metrics, cm = train_model()
-        # Store in session so results page can access
-        st.session_state["model"]      = model
-        st.session_state["scaler"]     = scaler
-        st.session_state["le"]         = le
-        st.session_state["feat_names"] = feat_names
-        st.session_state["metrics"]    = metrics
-        st.session_state["cm"]         = cm
         ready = True
     except Exception as e:
         st.error(f"Model training failed: {e}")
         ready = False
 
-# ── Header ────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="page-header">
-  <h1>Customer Churn</h1>
-</div>
-""", unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════════════════════
+# PREDICTION LOGIC
+# ══════════════════════════════════════════════════════════════════════════════
+def run_predict(customer):
+    df = pd.DataFrame([customer])
+    df["Gender"] = le.transform(df["Gender"])
+    df = pd.get_dummies(df, columns=["Geography"], drop_first=False)
+    for c in df.select_dtypes(include="bool").columns:
+        df[c] = df[c].astype(int)
+    for c in feat_names:
+        if c not in df.columns:
+            df[c] = 0
+    X_sc = scaler.transform(df[feat_names])
+    prob = float(model.predict_proba(X_sc)[0][1])
+    return prob, prob >= 0.50
 
-if not ready:
-    st.stop()
+# ══════════════════════════════════════════════════════════════════════════════
+# EXPLANATION ENGINE
+# ══════════════════════════════════════════════════════════════════════════════
+def build_explanation(c):
+    factors = []
+    if c["IsActiveMember"] == 0:
+        factors.append(("risk","🔴 Inactive Member — This customer is NOT actively using bank services. Inactive customers are 2–3× more likely to churn. Disengagement is the strongest predictor of leaving."))
+    else:
+        factors.append(("safe","🟢 Active Member — This customer actively uses bank services. Active engagement is the strongest retention signal in the model."))
+    if c["Age"] >= 50:
+        factors.append(("risk",f"🔴 Age ({c['Age']} yrs) — Customers aged 50+ show significantly higher churn rates. They are more likely to switch to banks offering better senior-focused products or rates."))
+    elif c["Age"] <= 30:
+        factors.append(("warn",f"🟡 Age ({c['Age']} yrs) — Younger customers tend to be less loyal and more open to switching banks for better digital features or interest rates."))
+    else:
+        factors.append(("safe",f"🟢 Age ({c['Age']} yrs) — Middle-aged customers show average retention rates. No significant age-related churn risk."))
+    if c["NumOfProducts"] == 1:
+        factors.append(("risk","🔴 Single Product — Holding only 1 bank product means low switching costs. Customers with 2+ products are significantly less likely to leave."))
+    elif c["NumOfProducts"] == 2:
+        factors.append(("safe","🟢 Two Products — Holding 2 products is strongly associated with retention. Multi-product customers have greater ties and higher switching costs."))
+    else:
+        factors.append(("warn",f"🟡 {c['NumOfProducts']} Products — Holding 3+ products sometimes indicates over-commitment. Some high-product customers still churn if service quality drops."))
+    if c["Geography"] == "Germany":
+        factors.append(("risk","🔴 Geography: Germany — German customers have the highest churn rate (~32%), vs France (~16%) and Spain (~17%). This reflects a more competitive local banking market."))
+    elif c["Geography"] == "Spain":
+        factors.append(("warn","🟡 Geography: Spain — Spanish customers show moderate churn rates (~17%). No strong geographic risk signal."))
+    else:
+        factors.append(("safe","🟢 Geography: France — French customers show the lowest churn rate (~16%) in this dataset. A mild protective factor."))
+    if c["CreditScore"] < 500:
+        factors.append(("risk",f"🔴 Credit Score ({c['CreditScore']}) — A low score suggests financial stress or poor banking history, both linked to higher churn probability."))
+    elif c["CreditScore"] >= 700:
+        factors.append(("safe",f"🟢 Credit Score ({c['CreditScore']}) — A strong credit score indicates financial stability. These customers are generally more satisfied and less likely to churn."))
+    else:
+        factors.append(("warn",f"🟡 Credit Score ({c['CreditScore']}) — An average score carries moderate churn risk. Not a strong signal in either direction."))
+    if c["Tenure"] <= 1:
+        factors.append(("risk",f"🔴 Short Tenure ({c['Tenure']} yr) — New customers are at highest risk. The first 1–2 years are the most critical period for retention."))
+    elif c["Tenure"] >= 7:
+        factors.append(("safe",f"🟢 Long Tenure ({c['Tenure']} yrs) — Long-standing customers are far less likely to leave. Loyalty deepens significantly over time."))
+    else:
+        factors.append(("warn",f"🟡 Tenure ({c['Tenure']} yrs) — Mid-range tenure carries neither strong loyalty nor high early-exit risk."))
+    if c["Balance"] == 0:
+        factors.append(("warn","🟡 Zero Balance — A $0 balance often signals a dormant account. These customers are at moderate churn risk."))
+    elif c["Balance"] > 150000:
+        factors.append(("warn",f"🟡 High Balance (${c['Balance']:,.0f}) — Very high balances can correlate with churn. High-value customers have high expectations and may leave if service falls short."))
+    else:
+        factors.append(("safe",f"🟢 Balance (${c['Balance']:,.0f}) — A moderate balance suggests normal banking activity. No strong balance-related churn signal."))
+    if c["Gender"] == "Female":
+        factors.append(("warn","🟡 Gender: Female — Female customers churn at a slightly higher rate (~25%) than male (~16%) in this dataset, possibly reflecting product gaps."))
+    else:
+        factors.append(("safe","🟢 Gender: Male — Male customers show a slightly lower churn rate (~16%). A mild protective factor."))
+    if c["HasCrCard"] == 0:
+        factors.append(("warn","🟡 No Credit Card — Not holding a bank-issued credit card slightly increases the likelihood of switching to a competitor."))
+    else:
+        factors.append(("safe","🟢 Has Credit Card — A bank-issued credit card creates an additional product tie — a mild but meaningful retention factor."))
+    order = {"risk":0,"warn":1,"safe":2}
+    factors.sort(key=lambda x: order[x[0]])
+    return factors
 
-# ── Input Form ────────────────────────────────────────────────────────────────
-st.markdown('<div class="input-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-title">👤 Demographics</div>', unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════════════════════
+# CHARTS
+# ══════════════════════════════════════════════════════════════════════════════
+def prob_bar_fig(prob, will_churn):
+    color = "#E85555" if will_churn else "#3DBE8A"
+    fig, ax = plt.subplots(figsize=(5, 1.1), facecolor="#0f2548")
+    ax.set_facecolor("#0f2548")
+    ax.barh([0], [1],    color="#1e3a5a", height=0.55, edgecolor="none")
+    ax.barh([0], [prob], color=color,    height=0.55, edgecolor="none")
+    ax.axvline(0.5, color="#FFE08A", lw=2, linestyle="--", alpha=0.8)
+    ax.set_xlim(0, 1); ax.set_ylim(-0.5, 0.5); ax.set_yticks([])
+    ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax.set_xticklabels(["0%","25%","50%","75%","100%"], fontsize=9, color="#A8B8D0")
+    for spine in ax.spines.values(): spine.set_visible(False)
+    ax.tick_params(length=0)
+    ax.text(min(prob+0.02, 0.82), 0, f"{prob*100:.1f}%",
+            va="center", color=color, fontsize=12, fontweight="bold")
+    plt.tight_layout(pad=0.2)
+    return fig
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    geography = st.selectbox("Geography", ["France", "Germany", "Spain"])
-with col2:
-    gender = st.selectbox("Gender", ["Female", "Male"])
-with col3:
-    age = st.slider("Age", 18, 92, 42)
+# ══════════════════════════════════════════════════════════════════════════════
+# ██████████████████  PAGE 1 — INPUT FORM  ████████████████████████████████████
+# ══════════════════════════════════════════════════════════════════════════════
+if st.session_state["page"] == "input":
 
-st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="page-header">
+      <h1>Customer Churn</h1>
+    </div>
+    """, unsafe_allow_html=True)
 
-st.markdown('<div class="input-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-title">🏦 Account Details</div>', unsafe_allow_html=True)
+    if not ready:
+        st.stop()
 
-col4, col5, col6 = st.columns(3)
-with col4:
-    credit_score = st.slider("Credit Score", 300, 850, 620)
-with col5:
-    tenure = st.slider("Tenure (years)", 0, 10, 3)
-with col6:
-    num_products = st.selectbox("Number of Products", [1, 2, 3, 4])
+    # Demographics
+    st.markdown('<div class="input-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">👤 Demographics</div>', unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    with c1: geography = st.selectbox("Geography", ["France","Germany","Spain"])
+    with c2: gender    = st.selectbox("Gender", ["Female","Male"])
+    with c3: age       = st.slider("Age", 18, 92, 42)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-col7, col8 = st.columns(2)
-with col7:
-    balance = st.number_input("Account Balance ($)", 0.0, 300000.0, 130000.0, step=1000.0)
-with col8:
-    estimated_sal = st.number_input("Estimated Salary ($)", 0.0, 250000.0, 82000.0, step=1000.0)
+    # Account details
+    st.markdown('<div class="input-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🏦 Account Details</div>', unsafe_allow_html=True)
+    c4, c5, c6 = st.columns(3)
+    with c4: credit_score = st.slider("Credit Score", 300, 850, 620)
+    with c5: tenure       = st.slider("Tenure (years)", 0, 10, 3)
+    with c6: num_products = st.selectbox("Number of Products", [1,2,3,4])
+    c7, c8 = st.columns(2)
+    with c7: balance       = st.number_input("Account Balance ($)", 0.0, 300000.0, 130000.0, step=1000.0)
+    with c8: estimated_sal = st.number_input("Estimated Salary ($)", 0.0, 250000.0, 82000.0, step=1000.0)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
+    # Engagement
+    st.markdown('<div class="input-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📲 Engagement</div>', unsafe_allow_html=True)
+    c9, c10 = st.columns(2)
+    with c9:  has_cr_card = st.radio("Has Credit Card?", ["Yes","No"], horizontal=True)
+    with c10: is_active   = st.radio("Is Active Member?", ["Yes","No"], horizontal=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="input-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-title">📲 Engagement</div>', unsafe_allow_html=True)
+    # Predict button
+    st.markdown('<div class="predict-btn">', unsafe_allow_html=True)
+    if st.button("🔍  Predict Customer Churn", use_container_width=True):
+        st.session_state["customer"] = {
+            "CreditScore":     credit_score,
+            "Geography":       geography,
+            "Gender":          gender,
+            "Age":             age,
+            "Tenure":          tenure,
+            "Balance":         balance,
+            "NumOfProducts":   num_products,
+            "HasCrCard":       1 if has_cr_card == "Yes" else 0,
+            "IsActiveMember":  1 if is_active   == "Yes" else 0,
+            "EstimatedSalary": estimated_sal,
+        }
+        st.session_state["page"] = "results"
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-col9, col10 = st.columns(2)
-with col9:
-    has_cr_card = st.radio("Has Credit Card?", ["Yes", "No"], horizontal=True)
-with col10:
-    is_active = st.radio("Is Active Member?", ["Yes", "No"], horizontal=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════════════════════
+# ██████████████████  PAGE 2 — RESULTS  ███████████████████████████████████████
+# ══════════════════════════════════════════════════════════════════════════════
+elif st.session_state["page"] == "results":
 
-# ── Predict Button ────────────────────────────────────────────────────────────
-if st.button("🔍  Predict Customer Churn", use_container_width=True):
-    # Save customer data to session state
-    st.session_state["customer"] = {
-        "CreditScore":     credit_score,
-        "Geography":       geography,
-        "Gender":          gender,
-        "Age":             age,
-        "Tenure":          tenure,
-        "Balance":         balance,
-        "NumOfProducts":   num_products,
-        "HasCrCard":       1 if has_cr_card == "Yes" else 0,
-        "IsActiveMember":  1 if is_active   == "Yes" else 0,
-        "EstimatedSalary": estimated_sal,
-    }
-    st.switch_page("pages/1_Results.py")
+    if "customer" not in st.session_state or not ready:
+        st.warning("No prediction data found. Please go back and fill in the form.")
+        if st.button("← Back to Input Form"):
+            st.session_state["page"] = "input"
+            st.rerun()
+        st.stop()
+
+    customer = st.session_state["customer"]
+    prob, will_churn = run_predict(customer)
+    factors = build_explanation(customer)
+
+    # Back button
+    st.markdown('<div class="back-btn">', unsafe_allow_html=True)
+    if st.button("← Back to Input Form"):
+        st.session_state["page"] = "input"
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="page-header">
+      <h1>Prediction Results</h1>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── VERDICT ───────────────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">🔎 Churn Verdict</div>', unsafe_allow_html=True)
+
+    col_v, col_p = st.columns([1, 1.5], gap="large")
+
+    with col_v:
+        if will_churn:
+            st.markdown(f"""
+            <div class="verdict-yes">
+              <div class="verdict-word" style="color:#E85555;">YES</div>
+              <div class="verdict-desc" style="color:#E85555;">This customer WILL CHURN</div>
+              <div class="verdict-prob">Model predicts a <strong style="color:#E85555;">{prob*100:.1f}%</strong> probability this customer will leave the bank.</div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="verdict-no">
+              <div class="verdict-word" style="color:#3DBE8A;">NO</div>
+              <div class="verdict-desc" style="color:#3DBE8A;">This customer will NOT CHURN</div>
+              <div class="verdict-prob">Model predicts a <strong style="color:#3DBE8A;">{(1-prob)*100:.1f}%</strong> confidence this customer will stay with the bank.</div>
+            </div>""", unsafe_allow_html=True)
+
+    with col_p:
+        verdict_col = "#E85555" if will_churn else "#3DBE8A"
+        verdict_txt = "CHURN"   if will_churn else "RETAIN"
+        risk_label  = "High"    if prob >= 0.6  else ("Medium" if prob >= 0.35 else "Low")
+        risk_col    = "#E85555" if prob >= 0.6  else ("#F0922B" if prob >= 0.35 else "#3DBE8A")
+
+        st.markdown('<div class="prob-card">', unsafe_allow_html=True)
+        st.markdown('<div class="prob-card-title">📈 Churn Probability Score</div>', unsafe_allow_html=True)
+        st.pyplot(prob_bar_fig(prob, will_churn), use_container_width=True)
+        st.markdown('<p style="font-size:0.78rem;color:#A8B8D0;margin:0.3rem 0 1rem 0;">Dashed line = 50% decision threshold (YES if above, NO if below)</p>', unsafe_allow_html=True)
+        m1, m2, m3 = st.columns(3)
+        with m1: st.markdown(f'<div class="mbox"><div class="lbl">Probability</div><div class="val" style="color:{verdict_col};">{prob*100:.1f}%</div></div>', unsafe_allow_html=True)
+        with m2: st.markdown(f'<div class="mbox"><div class="lbl">Verdict</div><div class="val" style="font-size:1.1rem;color:{verdict_col};">{verdict_txt}</div></div>', unsafe_allow_html=True)
+        with m3: st.markdown(f'<div class="mbox"><div class="lbl">Risk Level</div><div class="val" style="font-size:1.2rem;color:{risk_col};">{risk_label}</div></div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── EXPLANATION ───────────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">📋 Why This Prediction?</div>', unsafe_allow_html=True)
+    st.markdown('<p style="color:#A8B8D0;font-size:0.9rem;margin-bottom:1.2rem;">Each factor below shows how this customer\'s profile influenced the prediction. Risk factors are shown first.</p>', unsafe_allow_html=True)
+
+    css_map = {"risk":"exp-risk","warn":"exp-warn","safe":"exp-safe"}
+    half = (len(factors) + 1) // 2
+    e1, e2 = st.columns(2, gap="large")
+    with e1:
+        for ftype, ftext in factors[:half]:
+            st.markdown(f'<div class="{css_map[ftype]}">{ftext}</div>', unsafe_allow_html=True)
+    with e2:
+        for ftype, ftext in factors[half:]:
+            st.markdown(f'<div class="{css_map[ftype]}">{ftext}</div>', unsafe_allow_html=True)
+
+    # ── RECOMMENDATION ────────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">💡 Retention Recommendation</div>', unsafe_allow_html=True)
+    rec_color = "#E85555" if will_churn else "#3DBE8A"
+    rec_items = []
+    if will_churn:
+        if customer["IsActiveMember"] == 0:
+            rec_items.append("📲 Launch an immediate re-engagement campaign — a personalised call or email from a relationship manager.")
+        if customer["NumOfProducts"] == 1:
+            rec_items.append("🎁 Offer a cross-sell incentive such as a credit card, savings plan, or mortgage consultation to deepen product ties.")
+        if customer["Geography"] == "Germany":
+            rec_items.append("🌍 Review Germany-specific pricing and service offerings — competitive pressure is highest in this region.")
+        if customer["Age"] >= 50:
+            rec_items.append("👴 Consider a senior loyalty programme or preferential interest rates tailored to this age group.")
+        if customer["Tenure"] <= 1:
+            rec_items.append("🤝 Assign a dedicated onboarding advisor — early-tenure churn can be prevented with personalised support.")
+        if customer["Balance"] == 0:
+            rec_items.append("💳 Encourage account activation through zero-fee promotions or cashback offers to increase engagement.")
+        if not rec_items:
+            rec_items.append("⚠️ Multiple churn risk signals detected. A proactive outreach call from a senior relationship manager is strongly recommended.")
+        rec_items.append("📊 Flag this customer for the retention team's priority watchlist immediately.")
+    else:
+        rec_items = [
+            "✅ This customer is likely to stay — maintain current service quality and engagement.",
+            "📧 Include in periodic satisfaction surveys to detect any early warning signs.",
+            "💼 Consider upselling an additional product to further deepen the customer relationship.",
+            "🎯 Recognise and reward loyalty — a thank-you message or benefit can reinforce positive sentiment.",
+        ]
+
+    st.markdown(f'<div class="rec-card" style="border-left:4px solid {rec_color};">', unsafe_allow_html=True)
+    for item in rec_items:
+        st.markdown(f'<div class="rec-item">{item}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── CUSTOMER SUMMARY ──────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">👤 Customer Profile Summary</div>', unsafe_allow_html=True)
+    c = customer
+    t1, t2 = st.columns(2, gap="large")
+    with t1:
+        st.markdown(f"""
+        <table class="summary-table">
+          <tr><td>Geography</td><td>{c['Geography']}</td></tr>
+          <tr><td>Gender</td><td>{c['Gender']}</td></tr>
+          <tr><td>Age</td><td>{c['Age']} years</td></tr>
+          <tr><td>Credit Score</td><td>{c['CreditScore']}</td></tr>
+          <tr><td>Tenure</td><td>{c['Tenure']} years</td></tr>
+        </table>""", unsafe_allow_html=True)
+    with t2:
+        st.markdown(f"""
+        <table class="summary-table">
+          <tr><td>Account Balance</td><td>${c['Balance']:,.0f}</td></tr>
+          <tr><td>Number of Products</td><td>{c['NumOfProducts']}</td></tr>
+          <tr><td>Estimated Salary</td><td>${c['EstimatedSalary']:,.0f}</td></tr>
+          <tr><td>Has Credit Card</td><td>{'Yes' if c['HasCrCard'] else 'No'}</td></tr>
+          <tr><td>Active Member</td><td>{'Yes' if c['IsActiveMember'] else 'No'}</td></tr>
+        </table>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<div class="back-btn">', unsafe_allow_html=True)
+    if st.button("← Predict Another Customer", use_container_width=False):
+        st.session_state["page"] = "input"
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
