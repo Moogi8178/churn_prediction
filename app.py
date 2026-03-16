@@ -1,37 +1,26 @@
 """
-Customer Churn Prediction — Streamlit Deployment App
-Meru University of Science & Technology | Finley Barongo Magembe
+Customer Churn Prediction — Streamlit App
+Trains a Gradient Boosting model at startup using a public dataset URL.
+No pre-trained model files or heavy dependencies required.
+
+Meru University of Science & Technology
+Finley Barongo Magembe | CT204/109437/22
 """
 
-# ── Core imports (always available on Streamlit Cloud) ───────────────────────
 import streamlit as st
 import numpy as np
 import pandas as pd
-import pickle
-import joblib
 import plotly.graph_objects as go
-from pathlib import Path
 
-# ── Optional — each wrapped so a missing package never crashes the app ────────
-try:
-    import tensorflow as tf
-    TF_AVAILABLE = True
-except Exception:
-    TF_AVAILABLE = False
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, confusion_matrix,
+)
 
-try:
-    from xgboost import XGBClassifier   # noqa: F401
-    XGB_AVAILABLE = True
-except Exception:
-    XGB_AVAILABLE = False
-
-try:
-    from sklearn.preprocessing import StandardScaler  # noqa: F401
-    SK_AVAILABLE = True
-except Exception:
-    SK_AVAILABLE = False
-
-# ── Page config ──────────────────────────────────────────────────────────────
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Churn Predictor",
     page_icon="🏦",
@@ -39,254 +28,346 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
+# ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
 
-/* Root variables */
 :root {
     --navy:   #0B1D3A;
-    --ink:    #122952;
     --gold:   #C9A84C;
     --gold2:  #E8C97A;
     --cream:  #F7F3EC;
     --red:    #D64045;
     --green:  #2E9E6B;
     --amber:  #E07B30;
-    --glass:  rgba(255,255,255,0.05);
     --border: rgba(201,168,76,0.25);
 }
-
-/* Global */
 html, body, [class*="css"] {
     font-family: 'DM Sans', sans-serif;
     background-color: var(--navy) !important;
     color: var(--cream) !important;
 }
-
-/* Main container */
-.main .block-container { padding-top: 1.5rem; padding-bottom: 3rem; max-width: 1200px; }
-
-/* Header */
+.main .block-container { padding-top:1.5rem; padding-bottom:3rem; max-width:1200px; }
 .app-header {
     background: linear-gradient(135deg, #0B1D3A 0%, #1a3060 50%, #0B1D3A 100%);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 2rem 2.5rem;
-    margin-bottom: 2rem;
-    position: relative;
-    overflow: hidden;
+    border: 1px solid var(--border); border-radius:16px;
+    padding:2rem 2.5rem; margin-bottom:2rem; position:relative; overflow:hidden;
 }
 .app-header::before {
-    content: '';
-    position: absolute; top: 0; right: 0;
-    width: 300px; height: 300px;
-    background: radial-gradient(circle, rgba(201,168,76,0.08) 0%, transparent 70%);
-    pointer-events: none;
+    content:''; position:absolute; top:0; right:0; width:300px; height:300px;
+    background:radial-gradient(circle,rgba(201,168,76,0.08) 0%,transparent 70%);
 }
 .app-header h1 {
-    font-family: 'DM Serif Display', serif;
-    font-size: 2.4rem;
-    color: var(--gold2) !important;
-    margin: 0 0 0.3rem 0;
-    line-height: 1.1;
+    font-family:'DM Serif Display',serif; font-size:2.4rem;
+    color:var(--gold2) !important; margin:0 0 0.3rem 0; line-height:1.1;
 }
-.app-header p {
-    color: rgba(247,243,236,0.6) !important;
-    font-size: 0.9rem;
-    margin: 0;
-}
+.app-header p { color:rgba(247,243,236,0.6) !important; font-size:0.9rem; margin:0; }
 .app-header .badge {
-    display: inline-block;
-    background: rgba(201,168,76,0.15);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 3px 12px;
-    font-size: 0.75rem;
-    color: var(--gold);
-    margin-bottom: 0.8rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
+    display:inline-block; background:rgba(201,168,76,0.15);
+    border:1px solid var(--border); border-radius:20px; padding:3px 12px;
+    font-size:0.75rem; color:var(--gold); margin-bottom:0.8rem;
+    letter-spacing:0.05em; text-transform:uppercase;
 }
-
-/* Cards */
 .card {
-    background: var(--glass);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
+    background:rgba(255,255,255,0.04); border:1px solid var(--border);
+    border-radius:12px; padding:1.5rem; margin-bottom:1rem;
 }
 .card-title {
-    font-family: 'DM Serif Display', serif;
-    font-size: 1.1rem;
-    color: var(--gold2);
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border);
+    font-family:'DM Serif Display',serif; font-size:1.1rem; color:var(--gold2);
+    margin-bottom:1rem; padding-bottom:0.5rem; border-bottom:1px solid var(--border);
 }
-
-/* Metric boxes */
 .metric-box {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 1rem 1.2rem;
-    text-align: center;
+    background:rgba(255,255,255,0.04); border:1px solid var(--border);
+    border-radius:10px; padding:1rem 1.2rem; text-align:center;
 }
 .metric-box .label {
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgba(247,243,236,0.5);
-    margin-bottom: 0.3rem;
+    font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em;
+    color:rgba(247,243,236,0.5); margin-bottom:0.3rem;
 }
 .metric-box .value {
-    font-family: 'DM Serif Display', serif;
-    font-size: 1.8rem;
-    color: var(--gold2);
-    line-height: 1;
+    font-family:'DM Serif Display',serif; font-size:1.8rem;
+    color:var(--gold2); line-height:1;
 }
-
-/* Risk badges */
-.risk-high   { background:#D6404520; border:1.5px solid #D64045; border-radius:8px; padding:0.4rem 0.8rem; color:#D64045; font-weight:600; }
-.risk-medium { background:#E07B3020; border:1.5px solid #E07B30; border-radius:8px; padding:0.4rem 0.8rem; color:#E07B30; font-weight:600; }
-.risk-low    { background:#2E9E6B20; border:1.5px solid #2E9E6B; border-radius:8px; padding:0.4rem 0.8rem; color:#2E9E6B; font-weight:600; }
-
-/* Sidebar */
 [data-testid="stSidebar"] {
-    background-color: #0d2240 !important;
-    border-right: 1px solid var(--border);
+    background-color:#0d2240 !important; border-right:1px solid var(--border);
 }
-[data-testid="stSidebar"] .block-container { padding-top: 1.5rem; }
-
-/* Inputs */
-.stSelectbox > div > div,
-.stNumberInput > div > div > input,
-.stSlider > div { border-color: var(--border) !important; }
-
-div[data-baseweb="select"] > div { background: rgba(255,255,255,0.06) !important; border-color: var(--border) !important; }
-div[data-baseweb="select"] span { color: var(--cream) !important; }
-
-/* Button */
 .stButton > button {
-    background: linear-gradient(135deg, var(--gold), var(--gold2)) !important;
-    color: var(--navy) !important;
-    font-weight: 700;
-    font-family: 'DM Sans', sans-serif;
-    border: none !important;
-    border-radius: 8px !important;
-    padding: 0.6rem 2rem !important;
-    font-size: 1rem !important;
-    width: 100%;
-    transition: all 0.2s;
-    letter-spacing: 0.03em;
+    background:linear-gradient(135deg,var(--gold),var(--gold2)) !important;
+    color:var(--navy) !important; font-weight:700; border:none !important;
+    border-radius:8px !important; padding:0.6rem 2rem !important;
+    font-size:1rem !important; width:100%; transition:all 0.2s;
 }
-.stButton > button:hover { opacity: 0.9; transform: translateY(-1px); }
-
-/* Tabs */
-.stTabs [data-baseweb="tab-list"] { background: transparent; gap: 4px; }
+.stButton > button:hover { opacity:0.9; transform:translateY(-1px); }
+.stTabs [data-baseweb="tab-list"] { background:transparent; gap:4px; }
 .stTabs [data-baseweb="tab"] {
-    background: transparent;
-    border-radius: 8px;
-    color: rgba(247,243,236,0.5) !important;
-    font-family: 'DM Sans', sans-serif;
+    background:transparent; border-radius:8px;
+    color:rgba(247,243,236,0.5) !important;
 }
 .stTabs [aria-selected="true"] {
-    background: rgba(201,168,76,0.15) !important;
-    color: var(--gold2) !important;
+    background:rgba(201,168,76,0.15) !important; color:var(--gold2) !important;
 }
-
-/* Divider */
-hr { border-color: var(--border) !important; }
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--navy); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+hr { border-color:var(--border) !important; }
+div[data-baseweb="select"] > div {
+    background:rgba(255,255,255,0.06) !important; border-color:var(--border) !important;
+}
+div[data-baseweb="select"] span { color:var(--cream) !important; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── Model loading helpers ─────────────────────────────────────────────────────
-@st.cache_resource
-def load_models():
-    """Load serialised models safely. Falls back to demo mode if files missing."""
-    models = {'dnn': None, 'xgb': None, 'scaler': None}
+# ══════════════════════════════════════════════════════════════════════════════
+# DATA LOADING + MODEL TRAINING  (cached — runs once per session)
+# ══════════════════════════════════════════════════════════════════════════════
 
-    # ── Scaler (scikit-learn) ─────────────────────────────────────────────────
-    if Path('scaler.pkl').exists():
+DATASET_URLS = [
+    "https://raw.githubusercontent.com/YBI-Foundation/Dataset/main/Bank%20Churn%20Modelling.csv",
+    "https://raw.githubusercontent.com/dsrscientist/dataset1/master/Churn_Modelling.csv",
+    "https://raw.githubusercontent.com/ybifoundation/Dataset/main/Bank%20Churn%20Modelling.csv",
+]
+
+FEATURE_COLS = [
+    'CreditScore', 'Gender', 'Age', 'Tenure', 'Balance',
+    'NumOfProducts', 'HasCrCard', 'IsActiveMember', 'EstimatedSalary',
+    'Geography_France', 'Geography_Germany', 'Geography_Spain',
+]
+
+@st.cache_data(show_spinner=False)
+def load_and_train():
+    # 1. Download dataset
+    df = None
+    used_url = ""
+    for url in DATASET_URLS:
         try:
-            models['scaler'] = joblib.load('scaler.pkl')
-        except Exception as e:
-            st.sidebar.warning(f"scaler.pkl load failed: {e}")
-
-    # ── XGBoost model ─────────────────────────────────────────────────────────
-    if Path('churn_xgboost_model.pkl').exists():
-        try:
-            models['xgb'] = joblib.load('churn_xgboost_model.pkl')
-        except Exception as e:
-            st.sidebar.warning(f"XGBoost model load failed: {e}")
-
-    # ── DNN (TensorFlow) — only attempt if TF imported successfully ───────────
-    if TF_AVAILABLE and Path('churn_dnn_model.h5').exists():
-        try:
-            models['dnn'] = tf.keras.models.load_model('churn_dnn_model.h5')
-        except Exception as e:
-            st.sidebar.warning(f"DNN model load failed: {e}")
-
-    return models
-
-
-def preprocess_input(data: dict, scaler) -> np.ndarray:
-    """Encode and scale a single customer dict to model-ready array."""
-    df = pd.DataFrame([data])
-    df['Gender'] = 1 if data['Gender'] == 'Male' else 0
-    df = pd.get_dummies(df, columns=['Geography'], drop_first=False)
-
-    all_cols = [
-        'CreditScore','Gender','Age','Tenure','Balance',
-        'NumOfProducts','HasCrCard','IsActiveMember','EstimatedSalary',
-        'Geography_France','Geography_Germany','Geography_Spain',
-    ]
-    for col in all_cols:
-        if col not in df.columns:
-            df[col] = 0
-    df = df[all_cols]
-    return scaler.transform(df) if scaler else df.values
-
-
-def predict(customer: dict, models: dict) -> dict:
-    """Return probability and risk label from available model."""
-    X = preprocess_input(customer, models.get('scaler'))
-    prob = None
-
-    if models.get('dnn'):
-        try:
-            prob = float(models['dnn'].predict(X, verbose=0)[0][0])
+            df = pd.read_csv(url)
+            used_url = url
+            break
         except Exception:
-            pass
+            continue
 
-    if prob is None and models.get('xgb'):
-        try:
-            prob = float(models['xgb'].predict_proba(
-                pd.DataFrame([customer]
-            ).assign(Gender=lambda d: d.Gender.map({'Male':1,'Female':0}))
-             .pipe(lambda d: pd.get_dummies(d, columns=['Geography']))
-            )[:, 1][0])
-        except Exception:
-            pass
+    if df is None:
+        return None, None, None, None, None, 0, ""
 
-    if prob is None:
-        # Demo mode — simple rule-based approximation for UI preview
-        score = 0.0
-        if customer['Age'] > 45:           score += 0.25
-        if customer['IsActiveMember'] == 0: score += 0.20
-        if customer['NumOfProducts'] == 1:  score += 0.10
-        if customer['Balance'] > 100000:    score += 0.10
-        if customer['Geography'] == 'Germany': score += 0.15
-        prob = min(score + np.random.uniform(0.02, 0.06), 0.98)
+    # 2. Normalise column names
+    df.columns = df.columns.str.strip().str.replace(' ', '').str.replace('_', '')
+    rename = {
+        'NumofProducts':'NumOfProducts', 'NumOfProducts':'NumOfProducts',
+        'HasCreditCard':'HasCrCard',     'HasCrCard':'HasCrCard',
+        'IsActiveMember':'IsActiveMember',
+        'EstimatedSalary':'EstimatedSalary',
+        'Churn':'Exited',                'Exited':'Exited',
+        'CreditScore':'CreditScore',
+    }
+    df.rename(columns=rename, inplace=True)
+    df.drop(columns=[c for c in ['RowNumber','CustomerId','Surname','customerID',
+                                  'CustomerID'] if c in df.columns],
+            inplace=True, errors='ignore')
+
+    # 3. Impute missing
+    for col in df.select_dtypes(include='number').columns:
+        df[col].fillna(df[col].median(), inplace=True)
+    for col in df.select_dtypes(include='object').columns:
+        df[col].fillna(df[col].mode()[0], inplace=True)
+
+    # 4. Encode
+    if 'Gender' in df.columns:
+        df['Gender'] = df['Gender'].map({'Male':1,'Female':0,'M':1,'F':0}).fillna(0).astype(int)
+    if 'Geography' in df.columns:
+        df = pd.get_dummies(df, columns=['Geography'], drop_first=False)
+    for g in ['Geography_France','Geography_Germany','Geography_Spain']:
+        if g not in df.columns:
+            df[g] = 0
+    for col in df.select_dtypes(include='bool').columns:
+        df[col] = df[col].astype(int)
+
+    if 'Exited' not in df.columns:
+        return None, None, None, None, None, 0, ""
+
+    # 5. Features & target
+    available = [c for c in FEATURE_COLS if c in df.columns]
+    X = df[available].copy()
+    y = df['Exited']
+
+    # 6. Split & scale
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.20, random_state=42, stratify=y
+    )
+    scaler = StandardScaler()
+    X_train_sc = scaler.fit_transform(X_train)
+    X_test_sc  = scaler.transform(X_test)
+
+    # 7. Train Gradient Boosting (pure scikit-learn — no extra deps)
+    model = GradientBoostingClassifier(
+        n_estimators=200, max_depth=4,
+        learning_rate=0.08, subsample=0.85,
+        random_state=42,
+    )
+    model.fit(X_train_sc, y_train)
+
+    # 8. Evaluate
+    y_pred  = model.predict(X_test_sc)
+    y_proba = model.predict_proba(X_test_sc)[:, 1]
+    metrics = {
+        'Accuracy' : round(accuracy_score(y_test, y_pred),  4),
+        'Precision': round(precision_score(y_test, y_pred), 4),
+        'Recall'   : round(recall_score(y_test, y_pred),    4),
+        'F1-Score' : round(f1_score(y_test, y_pred),        4),
+        'AUC-ROC'  : round(roc_auc_score(y_test, y_proba),  4),
+        'cm'       : confusion_matrix(y_test, y_pred).tolist(),
+    }
+    fi = pd.Series(model.feature_importances_,
+                   index=available).sort_values(ascending=False)
+
+    return model, scaler, metrics, available, fi, len(df), used_url
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CHARTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def gauge_chart(prob, color):
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=round(prob * 100, 1),
+        number={'suffix':'%','font':{'size':42,'color':'#F7F3EC','family':'DM Serif Display'}},
+        gauge={
+            'axis':{'range':[0,100],'tickcolor':'#F7F3EC',
+                    'tickfont':{'color':'#F7F3EC','size':11}},
+            'bar':{'color':color,'thickness':0.28},
+            'bgcolor':'rgba(255,255,255,0.04)',
+            'bordercolor':'rgba(201,168,76,0.3)',
+            'steps':[
+                {'range':[0,35],  'color':'rgba(46,158,107,0.15)'},
+                {'range':[35,60], 'color':'rgba(224,123,48,0.15)'},
+                {'range':[60,100],'color':'rgba(214,64,69,0.15)'},
+            ],
+            'threshold':{'line':{'color':color,'width':3},'thickness':0.8,'value':prob*100},
+        },
+    ))
+    fig.update_layout(height=230,margin=dict(l=20,r=20,t=30,b=10),
+                      paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',
+                      font_color='#F7F3EC')
+    return fig
+
+def bar_chart(labels, values, colors):
+    fig = go.Figure(go.Bar(
+        x=values, y=labels, orientation='h',
+        marker_color=colors,
+        hovertemplate='%{y}: %{x:.4f}<extra></extra>',
+    ))
+    fig.update_layout(
+        height=280, margin=dict(l=10,r=10,t=10,b=10),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#F7F3EC',family='DM Sans',size=12),
+        xaxis=dict(gridcolor='rgba(201,168,76,0.15)',
+                   zerolinecolor='rgba(201,168,76,0.4)'),
+        yaxis=dict(gridcolor='rgba(0,0,0,0)'),
+    )
+    return fig
+
+def confusion_chart(cm):
+    fig = go.Figure(go.Heatmap(
+        z=cm, x=['Not Churned','Churned'], y=['Not Churned','Churned'],
+        text=[[str(v) for v in row] for row in cm],
+        texttemplate='%{text}',
+        colorscale=[[0,'#0B1D3A'],[1,'#C9A84C']],
+        showscale=False,
+    ))
+    fig.update_layout(
+        height=260, margin=dict(l=10,r=10,t=30,b=10),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#F7F3EC',family='DM Sans'),
+        xaxis_title='Predicted', yaxis_title='Actual',
+    )
+    return fig
+
+def contribution_chart(X_input, model, feature_cols):
+    contribs = []
+    for i, feat in enumerate(feature_cols):
+        p = X_input.copy(); p[0,i] += 0.5
+        m = X_input.copy(); m[0,i] -= 0.5
+        delta = (model.predict_proba(p)[0][1] - model.predict_proba(m)[0][1])
+        contribs.append((feat, delta))
+    contribs.sort(key=lambda x: abs(x[1]), reverse=True)
+    contribs = contribs[:8]
+    labels = [c[0] for c in contribs]
+    vals   = [c[1] for c in contribs]
+    colors = ['#D64045' if v > 0 else '#2E9E6B' for v in vals]
+    return bar_chart(labels, vals, colors)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN APP
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.markdown("""
+<div class="app-header">
+  <div class="badge">🏦 Retail Banking · Gradient Boosting · Auto-Trained</div>
+  <h1>Customer Churn Predictor</h1>
+  <p>Meru University of Science &amp; Technology &nbsp;·&nbsp; BSc Data Science &nbsp;·&nbsp;
+     Finley Barongo Magembe &nbsp;·&nbsp; CT204/109437/22</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Load & train
+with st.spinner("⚙️ Downloading dataset and training model... (first load only, ~20 seconds)"):
+    model, scaler, metrics, feature_cols, feat_importance, n_records, data_url = load_and_train()
+
+if model is None:
+    st.error("❌ Failed to download dataset. Please check your internet connection and try again.")
+    st.stop()
+
+st.success(f"✅ Model trained on **{n_records:,} records** — ready for predictions!")
+
+# Sidebar inputs
+with st.sidebar:
+    st.markdown(
+        '<p style="font-family:\'DM Serif Display\',serif;font-size:1.3rem;'
+        'color:#E8C97A;margin-bottom:1.2rem;">📋 Customer Profile</p>',
+        unsafe_allow_html=True
+    )
+    st.markdown("**Demographics**")
+    geography = st.selectbox("Geography", ["France", "Germany", "Spain"])
+    gender    = st.selectbox("Gender", ["Female", "Male"])
+    age       = st.slider("Age", 18, 92, 42)
+    st.markdown("---")
+    st.markdown("**Account Details**")
+    credit_score  = st.slider("Credit Score", 300, 850, 620)
+    tenure        = st.slider("Tenure (years)", 0, 10, 3)
+    balance       = st.number_input("Account Balance ($)", 0.0, 300000.0, 130000.0, step=1000.0)
+    num_products  = st.selectbox("Number of Products", [1, 2, 3, 4])
+    estimated_sal = st.number_input("Estimated Salary ($)", 0.0, 250000.0, 82000.0, step=1000.0)
+    st.markdown("---")
+    st.markdown("**Engagement**")
+    has_cr_card = st.radio("Has Credit Card?",  ["Yes","No"], horizontal=True)
+    is_active   = st.radio("Is Active Member?", ["Yes","No"], horizontal=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
+# Build feature vector
+def build_input():
+    row = {
+        'CreditScore'      : credit_score,
+        'Gender'           : 1 if gender == 'Male' else 0,
+        'Age'              : age,
+        'Tenure'           : tenure,
+        'Balance'          : balance,
+        'NumOfProducts'    : num_products,
+        'HasCrCard'        : 1 if has_cr_card == 'Yes' else 0,
+        'IsActiveMember'   : 1 if is_active   == 'Yes' else 0,
+        'EstimatedSalary'  : estimated_sal,
+        'Geography_France' : 1 if geography == 'France'  else 0,
+        'Geography_Germany': 1 if geography == 'Germany' else 0,
+        'Geography_Spain'  : 1 if geography == 'Spain'   else 0,
+    }
+    arr = np.array([[row.get(c, 0) for c in feature_cols]], dtype=float)
+    return scaler.transform(arr)
+
+# Tabs
+tab1, tab2, tab3 = st.tabs(["  🎯 Prediction  ", "  📊 Model Performance  ", "  ℹ️ About  "])
+
+with tab1:
+    X_input = build_input()
+    prob    = float(model.predict_proba(X_input)[0][1])
 
     if prob >= 0.60:
         risk, color, icon = 'HIGH RISK',   '#D64045', '🔴'
@@ -295,324 +376,154 @@ def predict(customer: dict, models: dict) -> dict:
     else:
         risk, color, icon = 'LOW RISK',    '#2E9E6B', '🟢'
 
-    return {'prob': prob, 'risk': risk, 'color': color, 'icon': icon}
+    col_g, col_m = st.columns([1, 1.2], gap="large")
 
+    with col_g:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">Churn Probability</div>', unsafe_allow_html=True)
+        st.plotly_chart(gauge_chart(prob, color), use_container_width=True,
+                        config={'displayModeBar': False})
+        st.markdown(
+            f'<div style="text-align:center;margin-top:-0.5rem;">'
+            f'<span style="background:{color}20;border:1.5px solid {color};'
+            f'border-radius:8px;padding:0.4rem 0.8rem;color:{color};font-weight:600;">'
+            f'{icon} {risk}</span></div>',
+            unsafe_allow_html=True
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# ── Gauge chart ───────────────────────────────────────────────────────────────
-def gauge_chart(prob: float, color: str) -> go.Figure:
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=round(prob * 100, 1),
-        number={'suffix': '%', 'font': {'size': 42, 'color': '#F7F3EC', 'family': 'DM Serif Display'}},
-        gauge={
-            'axis': {'range': [0, 100], 'tickcolor': '#F7F3EC',
-                     'tickfont': {'color': '#F7F3EC', 'size': 11}},
-            'bar': {'color': color, 'thickness': 0.28},
-            'bgcolor': 'rgba(255,255,255,0.04)',
-            'bordercolor': 'rgba(201,168,76,0.3)',
-            'steps': [
-                {'range': [0,  35], 'color': 'rgba(46,158,107,0.15)'},
-                {'range': [35, 60], 'color': 'rgba(224,123,48,0.15)'},
-                {'range': [60,100], 'color': 'rgba(214,64,69,0.15)'},
-            ],
-            'threshold': {
-                'line': {'color': color, 'width': 3},
-                'thickness': 0.8,
-                'value': prob * 100
-            },
-        },
-    ))
-    fig.update_layout(
-        height=230, margin=dict(l=20, r=20, t=30, b=10),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font_color='#F7F3EC',
-    )
-    return fig
+    with col_m:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">Customer Summary</div>', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f'<div class="metric-box"><div class="label">Credit Score</div>'
+                        f'<div class="value">{credit_score}</div></div>', unsafe_allow_html=True)
+        with c2:
+            st.markdown(f'<div class="metric-box"><div class="label">Age</div>'
+                        f'<div class="value">{age}</div></div>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        c3, c4 = st.columns(2)
+        with c3:
+            st.markdown(f'<div class="metric-box"><div class="label">Balance</div>'
+                        f'<div class="value">${balance:,.0f}</div></div>', unsafe_allow_html=True)
+        with c4:
+            st.markdown(f'<div class="metric-box"><div class="label">Tenure</div>'
+                        f'<div class="value">{tenure} yrs</div></div>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
+        if prob >= 0.60:
+            rec = "⚠️ Immediate retention action needed. Consider a personalised offer — loyalty bonus, rate review, or dedicated relationship manager."
+        elif prob >= 0.35:
+            rec = "📌 Monitor closely. Proactively engage within 30 days — product upgrade or satisfaction survey."
+        else:
+            rec = "✅ Customer appears stable. Maintain standard engagement cadence."
 
-# ── Feature importance (demo) ─────────────────────────────────────────────────
-def feature_importance_chart(customer: dict) -> go.Figure:
-    contributions = {
-        'Age':             (customer['Age'] - 38) / 30,
-        'IsActiveMember':  -0.4 if customer['IsActiveMember'] else 0.4,
-        'NumOfProducts':   -0.1 * (customer['NumOfProducts'] - 1),
-        'Balance':         (customer['Balance'] - 76000) / 300000,
-        'Geography_DE':    0.3 if customer['Geography'] == 'Germany' else -0.05,
-        'CreditScore':     -(customer['CreditScore'] - 650) / 400,
-        'Tenure':          -(customer['Tenure'] - 5) / 20,
-        'EstSalary':       (customer['EstimatedSalary'] - 100000) / 500000,
-    }
-    items = sorted(contributions.items(), key=lambda x: abs(x[1]), reverse=True)
-    labels = [k for k, _ in items]
-    vals   = [v for _, v in items]
-    colors = ['#D64045' if v > 0 else '#2E9E6B' for v in vals]
+        st.markdown(
+            f'<div style="background:rgba(255,255,255,0.04);border-left:3px solid {color};'
+            f'border-radius:0 8px 8px 0;padding:0.8rem 1rem;font-size:0.85rem;'
+            f'color:rgba(247,243,236,0.85);">'
+            f'<strong style="color:{color}">Recommendation</strong><br>{rec}</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    fig = go.Figure(go.Bar(
-        x=vals, y=labels, orientation='h',
-        marker_color=colors,
-        hovertemplate='%{y}: %{x:.3f}<extra></extra>',
-    ))
-    fig.update_layout(
-        height=280,
-        margin=dict(l=10, r=10, t=10, b=10),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#F7F3EC', family='DM Sans', size=12),
-        xaxis=dict(gridcolor='rgba(201,168,76,0.15)', zerolinecolor='rgba(201,168,76,0.4)'),
-        yaxis=dict(gridcolor='rgba(0,0,0,0)'),
-    )
-    return fig
+    cf1, cf2 = st.columns(2, gap="large")
+    with cf1:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">Feature Contribution (This Customer)</div>',
+                    unsafe_allow_html=True)
+        st.plotly_chart(contribution_chart(X_input, model, feature_cols),
+                        use_container_width=True, config={'displayModeBar': False})
+        st.markdown('<p style="font-size:0.72rem;color:rgba(247,243,236,0.4);margin:0">'
+                    '🔴 Increases churn risk &nbsp; 🟢 Reduces churn risk</p>',
+                    unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
+    with cf2:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">Global Feature Importance (Model)</div>',
+                    unsafe_allow_html=True)
+        top8 = feat_importance.head(8)
+        st.plotly_chart(
+            bar_chart(top8.index.tolist(), top8.values.tolist(),
+                      ['#C9A84C'] * len(top8)),
+            use_container_width=True, config={'displayModeBar': False}
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# ── Population comparison chart ───────────────────────────────────────────────
-def population_chart(prob: float) -> go.Figure:
-    categories = ['Low Risk\n(< 35%)', 'Medium Risk\n(35–60%)', 'High Risk\n(> 60%)']
-    counts     = [7963, 1200, 837]           # approximate from dataset distribution
-    colors_bar = ['#2E9E6B', '#E07B30', '#D64045']
-
-    # Highlight the customer's bucket
-    bucket = 2 if prob >= 0.60 else (1 if prob >= 0.35 else 0)
-    opacities = [0.35, 0.35, 0.35]
-    opacities[bucket] = 1.0
-
-    fig = go.Figure()
-    for i, (cat, cnt, col, op) in enumerate(zip(categories, counts, colors_bar, opacities)):
-        fig.add_trace(go.Bar(
-            x=[cat], y=[cnt],
-            marker_color=col, marker_opacity=op,
-            name=cat,
-            hovertemplate=f'{cat}: {cnt} customers<extra></extra>',
-        ))
-
-    fig.update_layout(
-        height=220, showlegend=False,
-        margin=dict(l=10, r=10, t=10, b=10),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#F7F3EC', family='DM Sans', size=11),
-        xaxis=dict(gridcolor='rgba(0,0,0,0)'),
-        yaxis=dict(gridcolor='rgba(201,168,76,0.15)', title='Customers'),
-        bargap=0.35,
-    )
-    return fig
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN APP
-# ═══════════════════════════════════════════════════════════════════════════════
-
-models = load_models()
-demo_mode = not (models.get('dnn') or models.get('xgb'))
-
-# ── Header ────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="app-header">
-  <div class="badge">🏦 Retail Banking · Deep Neural Network</div>
-  <h1>Customer Churn Predictor</h1>
-  <p>Meru University of Science & Technology &nbsp;·&nbsp; BSc Data Science &nbsp;·&nbsp; Finley Barongo Magembe</p>
-</div>
-""", unsafe_allow_html=True)
-
-if demo_mode:
-    st.info("⚡ **Demo mode** — No saved models found. Upload `churn_dnn_model.h5`, `churn_xgboost_model.pkl`, and `scaler.pkl` to the same directory as `app.py` for real predictions. Showing rule-based approximation.", icon="ℹ️")
-
-# ── Sidebar — Customer Input ──────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown('<p style="font-family:\'DM Serif Display\',serif; font-size:1.3rem; color:#E8C97A; margin-bottom:1.2rem;">📋 Customer Profile</p>', unsafe_allow_html=True)
-
-    st.markdown("**Demographics**")
-    geography      = st.selectbox("Geography", ["France", "Germany", "Spain"])
-    gender         = st.selectbox("Gender", ["Female", "Male"])
-    age            = st.slider("Age", 18, 92, 42)
-
-    st.markdown("---")
-    st.markdown("**Account Details**")
-    credit_score   = st.slider("Credit Score", 300, 850, 620)
-    tenure         = st.slider("Tenure (years)", 0, 10, 3)
-    balance        = st.number_input("Account Balance ($)", 0.0, 300000.0, 130000.0, step=1000.0)
-    num_products   = st.selectbox("Number of Products", [1, 2, 3, 4])
-    estimated_sal  = st.number_input("Estimated Salary ($)", 0.0, 250000.0, 82000.0, step=1000.0)
-
-    st.markdown("---")
-    st.markdown("**Engagement**")
-    has_cr_card    = st.radio("Has Credit Card?",    ["Yes", "No"], horizontal=True)
-    is_active      = st.radio("Is Active Member?",   ["Yes", "No"], horizontal=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    predict_btn    = st.button("🔍  Predict Churn Risk", use_container_width=True)
-
-# ── Build customer dict ───────────────────────────────────────────────────────
-customer = {
-    'CreditScore':     credit_score,
-    'Geography':       geography,
-    'Gender':          gender,
-    'Age':             age,
-    'Tenure':          tenure,
-    'Balance':         balance,
-    'NumOfProducts':   num_products,
-    'HasCrCard':       1 if has_cr_card == "Yes" else 0,
-    'IsActiveMember':  1 if is_active   == "Yes" else 0,
-    'EstimatedSalary': estimated_sal,
-}
-
-# ── Main content ──────────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["  🎯 Prediction  ", "  📊 Analytics  ", "  ℹ️ About  "])
-
-with tab1:
-    if predict_btn or True:   # always show on load
-        result = predict(customer, models)
-        prob   = result['prob']
-        color  = result['color']
-        risk   = result['risk']
-        icon   = result['icon']
-
-        # ── Row 1: gauge + key facts ──────────────────────────────────────────
-        col_g, col_m = st.columns([1, 1.2], gap="large")
-
-        with col_g:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Churn Probability</div>', unsafe_allow_html=True)
-            st.plotly_chart(gauge_chart(prob, color), use_container_width=True, config={'displayModeBar': False})
-            st.markdown(f'<div style="text-align:center; margin-top:-0.5rem;"><span class="risk-{"high" if prob>=0.6 else ("medium" if prob>=0.35 else "low")}">{icon} {risk}</span></div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with col_m:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Customer Summary</div>', unsafe_allow_html=True)
-            m1, m2 = st.columns(2)
-            with m1:
-                st.markdown(f'<div class="metric-box"><div class="label">Credit Score</div><div class="value">{credit_score}</div></div>', unsafe_allow_html=True)
-            with m2:
-                st.markdown(f'<div class="metric-box"><div class="label">Age</div><div class="value">{age}</div></div>', unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-            m3, m4 = st.columns(2)
-            with m3:
-                st.markdown(f'<div class="metric-box"><div class="label">Balance</div><div class="value">${balance:,.0f}</div></div>', unsafe_allow_html=True)
-            with m4:
-                st.markdown(f'<div class="metric-box"><div class="label">Tenure</div><div class="value">{tenure} yrs</div></div>', unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # Retention recommendation
-            if prob >= 0.60:
-                rec_text  = "⚠️ Immediate intervention recommended. Consider a personalised retention offer — loyalty bonus, interest rate review, or dedicated relationship manager."
-                rec_color = "#D64045"
-            elif prob >= 0.35:
-                rec_text  = "📌 Monitor closely. Proactively engage with product upgrade suggestions or satisfaction survey within 30 days."
-                rec_color = "#E07B30"
-            else:
-                rec_text  = "✅ Customer appears stable. Continue standard engagement cadence and periodic check-ins."
-                rec_color = "#2E9E6B"
-
-            st.markdown(f"""
-            <div style="background:rgba(255,255,255,0.04); border-left:3px solid {rec_color}; border-radius:0 8px 8px 0; padding:0.8rem 1rem; margin-top:0.5rem; font-size:0.85rem; color:rgba(247,243,236,0.85);">
-                <strong style="color:{rec_color}">Recommendation</strong><br>{rec_text}
-            </div>""", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # ── Row 2: feature impact + population ───────────────────────────────
-        col_fi, col_pop = st.columns(2, gap="large")
-
-        with col_fi:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Feature Impact (SHAP-style)</div>', unsafe_allow_html=True)
-            st.plotly_chart(feature_importance_chart(customer), use_container_width=True, config={'displayModeBar': False})
-            st.markdown('<p style="font-size:0.72rem; color:rgba(247,243,236,0.4); margin:0">🔴 Increases churn risk &nbsp; 🟢 Decreases churn risk</p>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with col_pop:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title">Population Risk Distribution</div>', unsafe_allow_html=True)
-            st.plotly_chart(population_chart(prob), use_container_width=True, config={'displayModeBar': False})
-            bucket_label = "High Risk" if prob >= 0.60 else ("Medium Risk" if prob >= 0.35 else "Low Risk")
-            st.markdown(f'<p style="font-size:0.78rem; color:rgba(247,243,236,0.5); margin:0">This customer falls in the <strong style="color:{color}">{bucket_label}</strong> segment (highlighted).</p>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
 
 with tab2:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="card-title">📊 Model Performance (Test Set)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="card-title">📊 Model Performance — Test Set (20%)</div>',
+                unsafe_allow_html=True)
 
-    perf_data = {
-        'Model':      ['Logistic Reg.', 'Decision Tree', 'KNN', 'Random Forest', 'XGBoost', 'LightGBM', 'Deep Neural Network'],
-        'Accuracy':   [0.783, 0.801, 0.791, 0.863, 0.871, 0.869, 0.874],
-        'Precision':  [0.521, 0.558, 0.544, 0.712, 0.731, 0.728, 0.743],
-        'Recall':     [0.604, 0.568, 0.551, 0.622, 0.638, 0.641, 0.657],
-        'F1-Score':   [0.559, 0.563, 0.547, 0.664, 0.682, 0.682, 0.697],
-        'AUC-ROC':    [0.774, 0.741, 0.750, 0.874, 0.887, 0.886, 0.893],
-    }
-    perf_df = pd.DataFrame(perf_data).set_index('Model')
+    cols = st.columns(5)
+    for col, key in zip(cols, ['Accuracy','Precision','Recall','F1-Score','AUC-ROC']):
+        with col:
+            st.markdown(
+                f'<div class="metric-box"><div class="label">{key}</div>'
+                f'<div class="value">{metrics[key]:.3f}</div></div>',
+                unsafe_allow_html=True
+            )
 
-    # Highlight DNN row
-    def highlight_dnn(row):
-        if row.name == 'Deep Neural Network':
-            return ['background-color: rgba(201,168,76,0.12); font-weight:600'] * len(row)
-        return [''] * len(row)
+    st.markdown("<br>", unsafe_allow_html=True)
+    cc, cfi = st.columns(2, gap="large")
 
-    st.dataframe(
-        perf_df.style.format('{:.3f}').apply(highlight_dnn, axis=1).background_gradient(
-            cmap='YlGn', axis=0, subset=['AUC-ROC']
-        ),
-        use_container_width=True,
-    )
+    with cc:
+        st.markdown("**Confusion Matrix**")
+        st.plotly_chart(confusion_chart(metrics['cm']),
+                        use_container_width=True, config={'displayModeBar': False})
+    with cfi:
+        st.markdown("**Top Feature Importances**")
+        top8 = feat_importance.head(8)
+        st.plotly_chart(
+            bar_chart(top8.index.tolist(), top8.values.tolist(),
+                      ['#C9A84C'] * len(top8)),
+            use_container_width=True, config={'displayModeBar': False}
+        )
 
-    # AUC bar chart
-    fig_auc = go.Figure(go.Bar(
-        x=perf_df.index, y=perf_df['AUC-ROC'],
-        marker_color=['#C9A84C' if m == 'Deep Neural Network' else 'rgba(201,168,76,0.4)'
-                      for m in perf_df.index],
-        text=[f'{v:.3f}' for v in perf_df['AUC-ROC']],
-        textposition='outside', textfont=dict(color='#F7F3EC', size=11),
-    ))
-    fig_auc.update_layout(
-        height=280, title='AUC-ROC by Model',
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#F7F3EC', family='DM Sans'),
-        yaxis=dict(range=[0.6, 0.95], gridcolor='rgba(201,168,76,0.15)'),
-        xaxis=dict(gridcolor='rgba(0,0,0,0)'),
-        margin=dict(t=40, b=10),
-    )
-    st.plotly_chart(fig_auc, use_container_width=True, config={'displayModeBar': False})
     st.markdown('</div>', unsafe_allow_html=True)
 
+
 with tab3:
-    st.markdown("""
+    st.markdown(f"""
     <div class="card">
       <div class="card-title">About This Application</div>
-      <p style="color:rgba(247,243,236,0.75); line-height:1.7;">
-        This system implements a <strong style="color:#E8C97A">Deep Neural Network (DNN)</strong> for customer churn prediction
-        in retail banking, developed as part of a BSc Data Science research project at
-        <strong style="color:#E8C97A">Meru University of Science and Technology</strong>.
+      <p style="color:rgba(247,243,236,0.75);line-height:1.7;">
+        This system automatically downloads a public banking churn dataset at startup
+        and trains a <strong style="color:#E8C97A">Gradient Boosting Classifier</strong>
+        in real-time — no uploaded model files or heavy frameworks (TensorFlow, XGBoost)
+        required.
       </p>
       <br>
-      <p style="font-family:'DM Serif Display',serif; color:#E8C97A; font-size:1rem; margin-bottom:0.5rem;">Research Objectives Met</p>
-      <ul style="color:rgba(247,243,236,0.75); line-height:2;">
-        <li>✅ Preprocessing & EDA of 10,000 banking customer records</li>
-        <li>✅ Deep Neural Network with BatchNorm + Dropout (4 hidden layers)</li>
-        <li>✅ Evaluation: Accuracy, Precision, Recall, F1, AUC-ROC, Confusion Matrix</li>
-        <li>✅ SHAP-style feature importance for explainability</li>
-        <li>✅ Streamlit deployment for real-time decision support</li>
+      <p style="font-family:'DM Serif Display',serif;color:#E8C97A;font-size:1rem;margin-bottom:0.5rem;">Dataset</p>
+      <p style="color:rgba(247,243,236,0.65);font-size:0.85rem;word-break:break-all;">
+        Auto-fetched from: <code>{data_url}</code><br>
+        Records: <strong>{n_records:,}</strong> &nbsp;·&nbsp;
+        Same feature set as your original dataset (Geography, Gender, Age, Balance, etc.)
+      </p>
+      <br>
+      <p style="font-family:'DM Serif Display',serif;color:#E8C97A;font-size:1rem;margin-bottom:0.5rem;">Research Objectives Covered</p>
+      <ul style="color:rgba(247,243,236,0.75);line-height:2;">
+        <li>✅ Data preprocessing — encoding, scaling, train/test split</li>
+        <li>✅ Gradient Boosting model (scikit-learn only)</li>
+        <li>✅ Accuracy, Precision, Recall, F1-Score, AUC-ROC, Confusion Matrix</li>
+        <li>✅ Per-customer feature contribution (sensitivity analysis)</li>
+        <li>✅ Global feature importances</li>
+        <li>✅ Real-time predictions with risk tiering</li>
       </ul>
       <br>
-      <p style="font-family:'DM Serif Display',serif; color:#E8C97A; font-size:1rem; margin-bottom:0.5rem;">Tech Stack</p>
-      <p style="color:rgba(247,243,236,0.6); font-size:0.85rem;">
-        Python · TensorFlow/Keras · Scikit-learn · XGBoost · LightGBM · SHAP · Streamlit · Plotly
-      </p>
-    </div>
-    <div class="card" style="margin-top:0.5rem">
-      <div class="card-title">How to Load Your Trained Models</div>
-      <p style="color:rgba(247,243,236,0.65); font-size:0.87rem; line-height:1.8;">
-        1. Train the model using the provided Colab notebook<br>
-        2. Download <code>churn_dnn_model.h5</code>, <code>churn_xgboost_model.pkl</code>, <code>scaler.pkl</code><br>
-        3. Place them in the same folder as <code>app.py</code><br>
-        4. Run: <code>streamlit run app.py</code>
+      <p style="font-family:'DM Serif Display',serif;color:#E8C97A;font-size:1rem;margin-bottom:0.5rem;">Tech Stack</p>
+      <p style="color:rgba(247,243,236,0.6);font-size:0.85rem;">
+        Python · Scikit-learn · Streamlit · Plotly · Pandas · NumPy
       </p>
     </div>
     """, unsafe_allow_html=True)
 
-# ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <hr style="margin-top:2rem">
-<p style="text-align:center; color:rgba(247,243,236,0.3); font-size:0.78rem; margin-top:0.5rem;">
+<p style="text-align:center;color:rgba(247,243,236,0.3);font-size:0.78rem;margin-top:0.5rem;">
   Finley Barongo Magembe · CT204/109437/22 · Meru University of Science and Technology · 2026
 </p>
 """, unsafe_allow_html=True)
