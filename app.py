@@ -262,10 +262,7 @@ with st.spinner("🔄 Downloading dataset & training model — ~20 sec on first 
 # ── Header ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="app-header">
-  <div class="badge">🏦 Retail Banking · Gradient Boosting</div>
-  <h1>Customer Churn Predictor</h1>
-  <p>Meru University of Science & Technology &nbsp;·&nbsp; BSc Data Science &nbsp;·&nbsp;
-     Finley Barongo Magembe &nbsp;·&nbsp; CT204/109437/22</p>
+  <h1>Customer Churn Prediction</h1>
 </div>
 """, unsafe_allow_html=True)
 
