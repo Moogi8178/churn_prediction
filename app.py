@@ -1,12 +1,12 @@
 """
 Customer Churn Prediction
-Single-file multipage app using session_state for navigation.
-No st.switch_page() — works on all Streamlit Cloud versions.
+Single-file multipage app with Login, Registration, Admin, Input, and Results pages.
 """
 
 import streamlit as st
 import numpy as np
 import pandas as pd
+import hashlib
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -26,9 +26,38 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── Initialise navigation state ───────────────────────────────────────────────
-if "page" not in st.session_state:
-    st.session_state["page"] = "input"   # "input" | "results"
+# ══════════════════════════════════════════════════════════════════════════════
+# USER STORE  (in-memory; replace with a DB for production)
+# ══════════════════════════════════════════════════════════════════════════════
+def _hash(pw: str) -> str:
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+if "users" not in st.session_state:
+    # Pre-seeded accounts: username → {password_hash, role, name}
+    st.session_state["users"] = {
+        "admin": {
+            "password_hash": _hash("admin123"),
+            "role": "admin",
+            "name": "Administrator",
+        },
+        "analyst": {
+            "password_hash": _hash("analyst123"),
+            "role": "user",
+            "name": "Bank Analyst",
+        },
+    }
+
+# ── Initialise navigation & auth state ───────────────────────────────────────
+for key, default in [
+    ("page", "login"),          # login | register | admin | input | results
+    ("logged_in", False),
+    ("current_user", None),
+    ("current_role", None),
+    ("auth_error", ""),
+    ("reg_success", False),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -48,7 +77,6 @@ st.markdown("""
     --amber: #FF9933;
 }
 
-/* ── Force dark background everywhere ── */
 html, body,
 [class*="css"],
 .stApp,
@@ -87,6 +115,33 @@ div[data-testid="stHorizontalBlock"] {
     letter-spacing: -0.5px;
     text-shadow: 0 2px 16px rgba(255,224,138,0.3);
 }
+.page-header p {
+    color: #C0CFDF !important;
+    font-size: 1rem !important;
+    font-weight: 400 !important;
+    margin: 0.5rem 0 0 0 !important;
+}
+
+/* ── Auth Card ── */
+.auth-card {
+    background-color: #112244;
+    border: 1.5px solid #3A5A8A;
+    border-radius: 18px;
+    padding: 2.5rem 2.5rem 2rem 2.5rem;
+    margin: 0 auto;
+    max-width: 480px;
+}
+.auth-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 2rem;
+    color: #FFE08A;
+    margin-bottom: 0.3rem;
+}
+.auth-subtitle {
+    color: #C0CFDF;
+    font-size: 0.95rem;
+    margin-bottom: 1.8rem;
+}
 
 /* ── Section Titles ── */
 .section-title {
@@ -111,6 +166,20 @@ div[data-testid="stHorizontalBlock"] {
     margin-bottom: 1.4rem;
 }
 
+/* ── Text Inputs (login/register) ── */
+[data-testid="stTextInput"] input {
+    background-color: #1a3560 !important;
+    color: #FFFFFF !important;
+    border: 1.5px solid #3A5A8A !important;
+    border-radius: 8px !important;
+    font-size: 1rem !important;
+    font-weight: 500 !important;
+}
+[data-testid="stTextInput"] input:focus {
+    border-color: #FFE08A !important;
+    box-shadow: 0 0 0 2px rgba(255,224,138,0.15) !important;
+}
+
 /* ── ALL text labels force white ── */
 label,
 .stSlider label,
@@ -122,13 +191,12 @@ label,
 [data-testid="stNumberInput"] label,
 [data-testid="stRadio"] label,
 [data-testid="stMarkdown"] p,
-p { 
+p {
     color: #FFFFFF !important;
     font-size: 1rem !important;
     font-weight: 600 !important;
 }
 
-/* Slider current value bubble */
 [data-testid="stSlider"] span,
 [data-testid="stSlider"] p {
     color: #FFE08A !important;
@@ -136,7 +204,6 @@ p {
     font-size: 1rem !important;
 }
 
-/* Select boxes */
 div[data-baseweb="select"] > div {
     background-color: #1a3560 !important;
     border: 1.5px solid #3A5A8A !important;
@@ -148,7 +215,6 @@ div[data-baseweb="select"] div {
     font-size: 1rem !important;
 }
 
-/* Number inputs */
 [data-testid="stNumberInput"] input {
     background-color: #1a3560 !important;
     color: #FFFFFF !important;
@@ -162,7 +228,6 @@ div[data-baseweb="select"] div {
     border-color: #3A5A8A !important;
 }
 
-/* Radio */
 [data-testid="stRadio"] label span { color: #FFFFFF !important; font-weight: 600 !important; font-size: 1rem !important; }
 [data-testid="stRadio"] > label    { color: #FFFFFF !important; font-weight: 700 !important; font-size: 1rem !important; }
 
@@ -189,6 +254,69 @@ div[data-baseweb="select"] div {
     line-height: 1;
     color: #FFE08A;
     display: block;
+}
+
+/* ── Admin table ── */
+.admin-table { width:100%; border-collapse:collapse; font-size:0.95rem; }
+.admin-table th {
+    background: #1a3560;
+    color: #FFE08A;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    padding: 0.8rem 1rem;
+    text-align: left;
+    font-weight: 700;
+}
+.admin-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #1e3a5a;
+    color: #FFFFFF;
+    vertical-align: middle;
+}
+.admin-table tr:last-child td { border-bottom: none; }
+.badge-admin  { background:#C9A84C22; color:#FFE08A; padding:0.2rem 0.7rem; border-radius:20px; font-size:0.8rem; font-weight:700; border:1px solid #C9A84C; }
+.badge-user   { background:#2ECC8A22; color:#2ECC8A; padding:0.2rem 0.7rem; border-radius:20px; font-size:0.8rem; font-weight:700; border:1px solid #2ECC8A; }
+
+/* ── Alert boxes ── */
+.alert-error {
+    background: #2d0f0f;
+    border: 1.5px solid #FF5555;
+    border-radius: 10px;
+    padding: 0.85rem 1.2rem;
+    color: #FF9999;
+    font-size: 0.95rem;
+    margin-bottom: 1rem;
+}
+.alert-success {
+    background: #052214;
+    border: 1.5px solid #2ECC8A;
+    border-radius: 10px;
+    padding: 0.85rem 1.2rem;
+    color: #2ECC8A;
+    font-size: 0.95rem;
+    margin-bottom: 1rem;
+}
+
+/* ── Nav bar ── */
+.topnav {
+    background: #112244;
+    border: 1.5px solid #3A5A8A;
+    border-radius: 12px;
+    padding: 0.7rem 1.5rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.topnav-brand {
+    font-family: 'DM Serif Display', serif;
+    color: #FFE08A;
+    font-size: 1.15rem;
+}
+.topnav-user {
+    color: #C0CFDF;
+    font-size: 0.9rem;
 }
 
 /* ── Verdict boxes ── */
@@ -304,12 +432,39 @@ div[data-baseweb="select"] div {
     text-transform: uppercase;
 }
 
-/* ── Back button ── */
-.back-btn > button {
+/* ── Primary button (login/register) ── */
+.primary-btn > button,
+.primary-btn > button:hover {
+    background: linear-gradient(135deg,#C9A84C,#FFE08A) !important;
+    color: #0B1D3A !important;
+    font-size: 1rem !important;
+    font-weight: 800 !important;
+    border: none !important;
+    border-radius: 10px !important;
+    padding: 0.7rem 2rem !important;
+    width: 100%;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+/* ── Back / secondary button ── */
+.back-btn > button,
+.sec-btn > button {
     background-color: #1a3560 !important;
     color: #FFE08A !important;
     font-weight: 700 !important;
     border: 1.5px solid #3A5A8A !important;
+    border-radius: 8px !important;
+    padding: 0.6rem 1.8rem !important;
+    font-size: 0.95rem !important;
+}
+
+/* ── Danger button ── */
+.danger-btn > button {
+    background-color: #2d0f0f !important;
+    color: #FF5555 !important;
+    font-weight: 700 !important;
+    border: 1.5px solid #FF5555 !important;
     border-radius: 8px !important;
     padding: 0.6rem 1.8rem !important;
     font-size: 0.95rem !important;
@@ -321,6 +476,57 @@ hr { border-color: #3A5A8A !important; }
 [data-testid="collapsedControl"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HELPER — TOP NAV BAR (shown when logged in)
+# ══════════════════════════════════════════════════════════════════════════════
+def render_nav():
+    users = st.session_state["users"]
+    user  = st.session_state["current_user"]
+    role  = st.session_state["current_role"]
+    name  = users[user]["name"] if user else ""
+
+    cols = st.columns([3, 1, 1, 1] if role == "admin" else [3, 1, 1])
+    with cols[0]:
+        st.markdown(
+            f'<div class="topnav-brand">🏦 Churn Predictor'
+            f'<span style="color:#C0CFDF;font-size:0.85rem;font-family:\'DM Sans\',sans-serif;font-weight:400;margin-left:0.7rem;">'
+            f'Welcome, {name}</span></div>',
+            unsafe_allow_html=True,
+        )
+    with cols[1]:
+        st.markdown('<div class="sec-btn">', unsafe_allow_html=True)
+        if st.button("🔍 Predict", use_container_width=True, key="nav_predict"):
+            st.session_state["page"] = "input"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    if role == "admin":
+        with cols[2]:
+            st.markdown('<div class="sec-btn">', unsafe_allow_html=True)
+            if st.button("⚙️ Admin", use_container_width=True, key="nav_admin"):
+                st.session_state["page"] = "admin"
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+        with cols[3]:
+            st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
+            if st.button("🚪 Logout", use_container_width=True, key="nav_logout"):
+                for k in ["logged_in","current_user","current_role","page","customer"]:
+                    st.session_state[k] = False if k == "logged_in" else (None if k in ["current_user","current_role"] else ("login" if k == "page" else st.session_state.get(k)))
+                st.session_state["page"] = "login"
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        with cols[2]:
+            st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
+            if st.button("🚪 Logout", use_container_width=True, key="nav_logout"):
+                for k in ["logged_in","current_user","current_role","customer"]:
+                    st.session_state[k] = False if k == "logged_in" else None
+                st.session_state["page"] = "login"
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<hr style='margin:0.5rem 0 1.5rem 0;'>", unsafe_allow_html=True)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MODEL TRAINING
@@ -368,13 +574,17 @@ def train_model():
     cm = confusion_matrix(y_te, y_pred)
     return model, scaler, le, feat_names, metrics, cm
 
-with st.spinner("🔄 Loading model — first run takes ~20 seconds…"):
-    try:
-        model, scaler, le, feat_names, metrics, cm = train_model()
-        ready = True
-    except Exception as e:
-        st.error(f"Model training failed: {e}")
-        ready = False
+# Only train if logged in (avoid slowing down the login page)
+ready = False
+model = scaler = le = feat_names = metrics = cm = None
+if st.session_state["logged_in"]:
+    with st.spinner("🔄 Loading model — first run takes ~20 seconds…"):
+        try:
+            model, scaler, le, feat_names, metrics, cm = train_model()
+            ready = True
+        except Exception as e:
+            st.error(f"Model training failed: {e}")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PREDICTION LOGIC
@@ -392,62 +602,64 @@ def run_predict(customer):
     prob = float(model.predict_proba(X_sc)[0][1])
     return prob, prob >= 0.50
 
+
 # ══════════════════════════════════════════════════════════════════════════════
 # EXPLANATION ENGINE
 # ══════════════════════════════════════════════════════════════════════════════
 def build_explanation(c):
     factors = []
     if c["IsActiveMember"] == 0:
-        factors.append(("risk","🔴 Inactive Member — This customer is NOT actively using bank services. Inactive customers are 2–3× more likely to churn. Disengagement is the strongest predictor of leaving."))
+        factors.append(("risk","🔴 Inactive Member — This customer is NOT actively using bank services. Inactive customers are 2–3× more likely to churn."))
     else:
-        factors.append(("safe","🟢 Active Member — This customer actively uses bank services. Active engagement is the strongest retention signal in the model."))
+        factors.append(("safe","🟢 Active Member — This customer actively uses bank services. Active engagement is the strongest retention signal."))
     if c["Age"] >= 50:
-        factors.append(("risk",f"🔴 Age ({c['Age']} yrs) — Customers aged 50+ show significantly higher churn rates. They are more likely to switch to banks offering better senior-focused products or rates."))
+        factors.append(("risk",f"🔴 Age ({c['Age']} yrs) — Customers aged 50+ show significantly higher churn rates."))
     elif c["Age"] <= 30:
-        factors.append(("warn",f"🟡 Age ({c['Age']} yrs) — Younger customers tend to be less loyal and more open to switching banks for better digital features or interest rates."))
+        factors.append(("warn",f"🟡 Age ({c['Age']} yrs) — Younger customers tend to be less loyal and more open to switching."))
     else:
-        factors.append(("safe",f"🟢 Age ({c['Age']} yrs) — Middle-aged customers show average retention rates. No significant age-related churn risk."))
+        factors.append(("safe",f"🟢 Age ({c['Age']} yrs) — Middle-aged customers show average retention rates."))
     if c["NumOfProducts"] == 1:
-        factors.append(("risk","🔴 Single Product — Holding only 1 bank product means low switching costs. Customers with 2+ products are significantly less likely to leave."))
+        factors.append(("risk","🔴 Single Product — Only 1 bank product means low switching costs. Customers with 2+ products are less likely to leave."))
     elif c["NumOfProducts"] == 2:
-        factors.append(("safe","🟢 Two Products — Holding 2 products is strongly associated with retention. Multi-product customers have greater ties and higher switching costs."))
+        factors.append(("safe","🟢 Two Products — Holding 2 products is strongly associated with retention."))
     else:
-        factors.append(("warn",f"🟡 {c['NumOfProducts']} Products — Holding 3+ products sometimes indicates over-commitment. Some high-product customers still churn if service quality drops."))
+        factors.append(("warn",f"🟡 {c['NumOfProducts']} Products — 3+ products sometimes indicates over-commitment and hidden churn risk."))
     if c["Geography"] == "Germany":
-        factors.append(("risk","🔴 Geography: Germany — German customers have the highest churn rate (~32%), vs France (~16%) and Spain (~17%). This reflects a more competitive local banking market."))
+        factors.append(("risk","🔴 Geography: Germany — German customers have the highest churn rate (~32%)."))
     elif c["Geography"] == "Spain":
-        factors.append(("warn","🟡 Geography: Spain — Spanish customers show moderate churn rates (~17%). No strong geographic risk signal."))
+        factors.append(("warn","🟡 Geography: Spain — Spanish customers show moderate churn rates (~17%)."))
     else:
-        factors.append(("safe","🟢 Geography: France — French customers show the lowest churn rate (~16%) in this dataset. A mild protective factor."))
+        factors.append(("safe","🟢 Geography: France — French customers show the lowest churn rate (~16%)."))
     if c["CreditScore"] < 500:
-        factors.append(("risk",f"🔴 Credit Score ({c['CreditScore']}) — A low score suggests financial stress or poor banking history, both linked to higher churn probability."))
+        factors.append(("risk",f"🔴 Credit Score ({c['CreditScore']}) — A low score suggests financial stress, linked to higher churn."))
     elif c["CreditScore"] >= 700:
-        factors.append(("safe",f"🟢 Credit Score ({c['CreditScore']}) — A strong credit score indicates financial stability. These customers are generally more satisfied and less likely to churn."))
+        factors.append(("safe",f"🟢 Credit Score ({c['CreditScore']}) — A strong credit score indicates financial stability."))
     else:
-        factors.append(("warn",f"🟡 Credit Score ({c['CreditScore']}) — An average score carries moderate churn risk. Not a strong signal in either direction."))
+        factors.append(("warn",f"🟡 Credit Score ({c['CreditScore']}) — Average score carries moderate churn risk."))
     if c["Tenure"] <= 1:
-        factors.append(("risk",f"🔴 Short Tenure ({c['Tenure']} yr) — New customers are at highest risk. The first 1–2 years are the most critical period for retention."))
+        factors.append(("risk",f"🔴 Short Tenure ({c['Tenure']} yr) — New customers are at highest churn risk."))
     elif c["Tenure"] >= 7:
-        factors.append(("safe",f"🟢 Long Tenure ({c['Tenure']} yrs) — Long-standing customers are far less likely to leave. Loyalty deepens significantly over time."))
+        factors.append(("safe",f"🟢 Long Tenure ({c['Tenure']} yrs) — Long-standing customers are far less likely to leave."))
     else:
-        factors.append(("warn",f"🟡 Tenure ({c['Tenure']} yrs) — Mid-range tenure carries neither strong loyalty nor high early-exit risk."))
+        factors.append(("warn",f"🟡 Tenure ({c['Tenure']} yrs) — Mid-range tenure carries neither strong loyalty nor high exit risk."))
     if c["Balance"] == 0:
-        factors.append(("warn","🟡 Zero Balance — A $0 balance often signals a dormant account. These customers are at moderate churn risk."))
+        factors.append(("warn","🟡 Zero Balance — A $0 balance often signals a dormant account at moderate churn risk."))
     elif c["Balance"] > 150000:
-        factors.append(("warn",f"🟡 High Balance (${c['Balance']:,.0f}) — Very high balances can correlate with churn. High-value customers have high expectations and may leave if service falls short."))
+        factors.append(("warn",f"🟡 High Balance (${c['Balance']:,.0f}) — Very high balances can correlate with churn if service falls short."))
     else:
-        factors.append(("safe",f"🟢 Balance (${c['Balance']:,.0f}) — A moderate balance suggests normal banking activity. No strong balance-related churn signal."))
+        factors.append(("safe",f"🟢 Balance (${c['Balance']:,.0f}) — A moderate balance suggests normal banking activity."))
     if c["Gender"] == "Female":
-        factors.append(("warn","🟡 Gender: Female — Female customers churn at a slightly higher rate (~25%) than male (~16%) in this dataset, possibly reflecting product gaps."))
+        factors.append(("warn","🟡 Gender: Female — Female customers churn at a slightly higher rate (~25%) in this dataset."))
     else:
-        factors.append(("safe","🟢 Gender: Male — Male customers show a slightly lower churn rate (~16%). A mild protective factor."))
+        factors.append(("safe","🟢 Gender: Male — Male customers show a slightly lower churn rate (~16%)."))
     if c["HasCrCard"] == 0:
-        factors.append(("warn","🟡 No Credit Card — Not holding a bank-issued credit card slightly increases the likelihood of switching to a competitor."))
+        factors.append(("warn","🟡 No Credit Card — Slightly increases the likelihood of switching to a competitor."))
     else:
-        factors.append(("safe","🟢 Has Credit Card — A bank-issued credit card creates an additional product tie — a mild but meaningful retention factor."))
+        factors.append(("safe","🟢 Has Credit Card — A bank-issued credit card creates an additional product tie."))
     order = {"risk":0,"warn":1,"safe":2}
     factors.sort(key=lambda x: order[x[0]])
     return factors
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CHARTS
@@ -469,14 +681,277 @@ def prob_bar_fig(prob, will_churn):
     plt.tight_layout(pad=0.2)
     return fig
 
+
 # ══════════════════════════════════════════════════════════════════════════════
-# ██████████████████  PAGE 1 — INPUT FORM  ████████████████████████████████████
+# ██████████████████  PAGE — LOGIN  ████████████████████████████████████████████
 # ══════════════════════════════════════════════════════════════════════════════
-if st.session_state["page"] == "input":
+if st.session_state["page"] == "login":
+
+    _, center, _ = st.columns([1, 2, 1])
+    with center:
+        st.markdown("""
+        <div style="text-align:center;margin-bottom:2rem;margin-top:1rem;">
+            <div style="font-size:3.5rem;">🏦</div>
+            <div style="font-family:'DM Serif Display',serif;font-size:2.2rem;color:#FFE08A;margin-top:0.3rem;">
+                Churn Predictor
+            </div>
+            <div style="color:#C0CFDF;font-size:0.95rem;margin-top:0.3rem;">
+                Bank Customer Intelligence Platform
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+        st.markdown('<div class="auth-title">Sign In</div>', unsafe_allow_html=True)
+        st.markdown('<div class="auth-subtitle">Enter your credentials to access the platform</div>', unsafe_allow_html=True)
+
+        if st.session_state.get("reg_success"):
+            st.markdown('<div class="alert-success">✅ Account created successfully! Please sign in.</div>', unsafe_allow_html=True)
+            st.session_state["reg_success"] = False
+
+        if st.session_state.get("auth_error"):
+            st.markdown(f'<div class="alert-error">⚠️ {st.session_state["auth_error"]}</div>', unsafe_allow_html=True)
+            st.session_state["auth_error"] = ""
+
+        username = st.text_input("Username", placeholder="Enter username", key="login_user")
+        password = st.text_input("Password", type="password", placeholder="Enter password", key="login_pw")
+
+        st.markdown('<div class="primary-btn" style="margin-top:1.2rem;">', unsafe_allow_html=True)
+        if st.button("Sign In →", use_container_width=True, key="do_login"):
+            users = st.session_state["users"]
+            if username in users and users[username]["password_hash"] == _hash(password):
+                st.session_state["logged_in"]    = True
+                st.session_state["current_user"] = username
+                st.session_state["current_role"] = users[username]["role"]
+                st.session_state["page"]         = "admin" if users[username]["role"] == "admin" else "input"
+                st.rerun()
+            else:
+                st.session_state["auth_error"] = "Invalid username or password."
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown("<hr style='margin:1.5rem 0;border-color:#3A5A8A;'>", unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;color:#C0CFDF;font-size:0.9rem;">Don\'t have an account?</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-btn" style="margin-top:0.6rem;">', unsafe_allow_html=True)
+        if st.button("Create Account", use_container_width=True, key="go_register"):
+            st.session_state["page"] = "register"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)  # auth-card
+
+        st.markdown("""
+        <div style="text-align:center;margin-top:1.5rem;color:#3A5A8A;font-size:0.82rem;">
+            Demo credentials &nbsp;|&nbsp; Admin: <strong style="color:#C0CFDF;">admin / admin123</strong>
+            &nbsp;|&nbsp; User: <strong style="color:#C0CFDF;">analyst / analyst123</strong>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ██████████████████  PAGE — REGISTER  ████████████████████████████████████████
+# ══════════════════════════════════════════════════════════════════════════════
+elif st.session_state["page"] == "register":
+
+    _, center, _ = st.columns([1, 2, 1])
+    with center:
+        st.markdown("""
+        <div style="text-align:center;margin-bottom:2rem;margin-top:1rem;">
+            <div style="font-size:3.5rem;">🏦</div>
+            <div style="font-family:'DM Serif Display',serif;font-size:2.2rem;color:#FFE08A;margin-top:0.3rem;">
+                Create Account
+            </div>
+            <div style="color:#C0CFDF;font-size:0.95rem;margin-top:0.3rem;">
+                Join the Churn Predictor Platform
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+        st.markdown('<div class="auth-title">Register</div>', unsafe_allow_html=True)
+        st.markdown('<div class="auth-subtitle">Fill in your details to create a new account</div>', unsafe_allow_html=True)
+
+        if st.session_state.get("auth_error"):
+            st.markdown(f'<div class="alert-error">⚠️ {st.session_state["auth_error"]}</div>', unsafe_allow_html=True)
+            st.session_state["auth_error"] = ""
+
+        full_name = st.text_input("Full Name", placeholder="e.g. Jane Doe", key="reg_name")
+        reg_user  = st.text_input("Username", placeholder="Choose a username", key="reg_user")
+        reg_pw    = st.text_input("Password", type="password", placeholder="Min 6 characters", key="reg_pw")
+        reg_pw2   = st.text_input("Confirm Password", type="password", placeholder="Repeat password", key="reg_pw2")
+
+        st.markdown('<div class="primary-btn" style="margin-top:1.2rem;">', unsafe_allow_html=True)
+        if st.button("Create Account →", use_container_width=True, key="do_register"):
+            users = st.session_state["users"]
+            if not full_name or not reg_user or not reg_pw:
+                st.session_state["auth_error"] = "All fields are required."
+                st.rerun()
+            elif reg_user in users:
+                st.session_state["auth_error"] = f"Username '{reg_user}' is already taken."
+                st.rerun()
+            elif len(reg_pw) < 6:
+                st.session_state["auth_error"] = "Password must be at least 6 characters."
+                st.rerun()
+            elif reg_pw != reg_pw2:
+                st.session_state["auth_error"] = "Passwords do not match."
+                st.rerun()
+            else:
+                st.session_state["users"][reg_user] = {
+                    "password_hash": _hash(reg_pw),
+                    "role": "user",
+                    "name": full_name,
+                }
+                st.session_state["reg_success"] = True
+                st.session_state["page"] = "login"
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown("<hr style='margin:1.5rem 0;border-color:#3A5A8A;'>", unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;color:#C0CFDF;font-size:0.9rem;">Already have an account?</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-btn" style="margin-top:0.6rem;">', unsafe_allow_html=True)
+        if st.button("← Back to Sign In", use_container_width=True, key="go_login"):
+            st.session_state["auth_error"] = ""
+            st.session_state["page"] = "login"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)  # auth-card
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ██████████████████  PAGE — ADMIN DASHBOARD  ██████████████████████████████████
+# ══════════════════════════════════════════════════════════════════════════════
+elif st.session_state["page"] == "admin":
+
+    if not st.session_state["logged_in"] or st.session_state["current_role"] != "admin":
+        st.session_state["page"] = "login"
+        st.rerun()
+
+    render_nav()
+
+    st.markdown("""
+    <div class="page-header">
+      <h1>⚙️ Admin Dashboard</h1>
+      <p>Manage users and monitor platform activity</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    users = st.session_state["users"]
+
+    # ── Stats row ──────────────────────────────────────────────────────────
+    total    = len(users)
+    admins   = sum(1 for u in users.values() if u["role"] == "admin")
+    analysts = total - admins
+
+    s1, s2, s3 = st.columns(3)
+    with s1:
+        st.markdown(f'<div class="mbox"><div class="lbl">Total Users</div><div class="val">{total}</div></div>', unsafe_allow_html=True)
+    with s2:
+        st.markdown(f'<div class="mbox"><div class="lbl">Admins</div><div class="val" style="color:#FFE08A;">{admins}</div></div>', unsafe_allow_html=True)
+    with s3:
+        st.markdown(f'<div class="mbox"><div class="lbl">Analysts</div><div class="val" style="color:#2ECC8A;">{analysts}</div></div>', unsafe_allow_html=True)
+
+    # ── User list ──────────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">👥 User Accounts</div>', unsafe_allow_html=True)
+
+    rows = ""
+    for uname, udata in users.items():
+        badge = f'<span class="badge-admin">Admin</span>' if udata["role"] == "admin" else f'<span class="badge-user">Analyst</span>'
+        rows += f"""
+        <tr>
+            <td>{udata['name']}</td>
+            <td><code style="color:#C9A84C;background:#1a3560;padding:0.1rem 0.5rem;border-radius:5px;">{uname}</code></td>
+            <td>{badge}</td>
+        </tr>"""
+
+    st.markdown(f"""
+    <div style="background:#112244;border:1.5px solid #3A5A8A;border-radius:14px;overflow:hidden;margin-bottom:1.5rem;">
+        <table class="admin-table">
+            <thead><tr><th>Name</th><th>Username</th><th>Role</th></tr></thead>
+            <tbody>{rows}</tbody>
+        </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Add new user ───────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">➕ Add New User</div>', unsafe_allow_html=True)
+
+    if st.session_state.get("auth_error"):
+        st.markdown(f'<div class="alert-error">⚠️ {st.session_state["auth_error"]}</div>', unsafe_allow_html=True)
+        st.session_state["auth_error"] = ""
+    if st.session_state.get("admin_msg"):
+        st.markdown(f'<div class="alert-success">✅ {st.session_state["admin_msg"]}</div>', unsafe_allow_html=True)
+        st.session_state["admin_msg"] = ""
+
+    with st.form("add_user_form", clear_on_submit=True):
+        ac1, ac2 = st.columns(2)
+        with ac1:
+            new_name = st.text_input("Full Name", placeholder="e.g. Mary Wanjiku")
+            new_user = st.text_input("Username", placeholder="e.g. mwanjiku")
+        with ac2:
+            new_pw   = st.text_input("Password", type="password", placeholder="Min 6 chars")
+            new_role = st.selectbox("Role", ["user", "admin"])
+        submitted = st.form_submit_button("➕ Add User", use_container_width=False)
+        if submitted:
+            if not new_name or not new_user or not new_pw:
+                st.session_state["auth_error"] = "All fields required."
+                st.rerun()
+            elif new_user in users:
+                st.session_state["auth_error"] = f"Username '{new_user}' already exists."
+                st.rerun()
+            elif len(new_pw) < 6:
+                st.session_state["auth_error"] = "Password must be at least 6 characters."
+                st.rerun()
+            else:
+                st.session_state["users"][new_user] = {
+                    "password_hash": _hash(new_pw),
+                    "role": new_role,
+                    "name": new_name,
+                }
+                st.session_state["admin_msg"] = f"User '{new_user}' added successfully."
+                st.rerun()
+
+    # ── Delete user ────────────────────────────────────────────────────────
+    st.markdown('<div class="section-title">🗑️ Remove User</div>', unsafe_allow_html=True)
+
+    deletable = [u for u in users if u != st.session_state["current_user"]]
+    if deletable:
+        del_col1, del_col2 = st.columns([2, 1])
+        with del_col1:
+            del_target = st.selectbox("Select user to remove", deletable, key="del_user_select")
+        with del_col2:
+            st.markdown('<div style="margin-top:1.8rem;"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
+            if st.button(f"🗑️ Remove", use_container_width=True, key="do_delete"):
+                del st.session_state["users"][del_target]
+                st.session_state["admin_msg"] = f"User '{del_target}' removed."
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<p style="color:#C0CFDF;">No other users to remove.</p>', unsafe_allow_html=True)
+
+    # ── Model metrics (if loaded) ──────────────────────────────────────────
+    if ready:
+        st.markdown('<div class="section-title">📊 Model Performance Metrics</div>', unsafe_allow_html=True)
+        mcols = st.columns(len(metrics))
+        for i, (k, v) in enumerate(metrics.items()):
+            with mcols[i]:
+                st.markdown(f'<div class="mbox"><div class="lbl">{k}</div><div class="val">{v:.1%}</div></div>', unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ██████████████████  PAGE — INPUT FORM  ███████████████████████████████████████
+# ══════════════════════════════════════════════════════════════════════════════
+elif st.session_state["page"] == "input":
+
+    if not st.session_state["logged_in"]:
+        st.session_state["page"] = "login"
+        st.rerun()
+
+    render_nav()
 
     st.markdown("""
     <div class="page-header">
       <h1>Customer Churn</h1>
+      <p>Fill in the customer profile below and run the churn prediction model</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -533,22 +1008,29 @@ if st.session_state["page"] == "input":
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ██████████████████  PAGE 2 — RESULTS  ███████████████████████████████████████
+# ██████████████████  PAGE — RESULTS  ████████████████████████████████████████
 # ══════════════════════════════════════════════════════════════════════════════
 elif st.session_state["page"] == "results":
 
+    if not st.session_state["logged_in"]:
+        st.session_state["page"] = "login"
+        st.rerun()
+
+    render_nav()
+
     if "customer" not in st.session_state or not ready:
         st.warning("No prediction data found. Please go back and fill in the form.")
+        st.markdown('<div class="back-btn">', unsafe_allow_html=True)
         if st.button("← Back to Input Form"):
             st.session_state["page"] = "input"
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
         st.stop()
 
     customer = st.session_state["customer"]
     prob, will_churn = run_predict(customer)
     factors = build_explanation(customer)
 
-    # Back button
     st.markdown('<div class="back-btn">', unsafe_allow_html=True)
     if st.button("← Back to Input Form"):
         st.session_state["page"] = "input"
@@ -579,7 +1061,7 @@ elif st.session_state["page"] == "results":
             <div class="verdict-no">
               <div class="verdict-word" style="color:#3DBE8A;">NO</div>
               <div class="verdict-desc" style="color:#3DBE8A;">This customer will NOT CHURN</div>
-              <div class="verdict-prob">Model predicts a <strong style="color:#3DBE8A;">{(1-prob)*100:.1f}%</strong> confidence this customer will stay with the bank.</div>
+              <div class="verdict-prob">Model predicts a <strong style="color:#3DBE8A;">{(1-prob)*100:.1f}%</strong> confidence this customer will stay.</div>
             </div>""", unsafe_allow_html=True)
 
     with col_p:
@@ -591,7 +1073,7 @@ elif st.session_state["page"] == "results":
         st.markdown('<div class="prob-card">', unsafe_allow_html=True)
         st.markdown('<div class="prob-card-title">📈 Churn Probability Score</div>', unsafe_allow_html=True)
         st.pyplot(prob_bar_fig(prob, will_churn), use_container_width=True)
-        st.markdown('<p style="font-size:0.88rem;color:#C0CFDF;font-weight:500;margin:0.3rem 0 1rem 0;">Dashed line = 50% decision threshold &mdash; YES if above, NO if below</p>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:0.88rem;color:#C0CFDF;font-weight:500;margin:0.3rem 0 1rem 0;">Dashed line = 50% decision threshold — YES if above, NO if below</p>', unsafe_allow_html=True)
         m1, m2, m3 = st.columns(3)
         with m1: st.markdown(f'<div class="mbox"><div class="lbl">Probability</div><div class="val" style="color:{verdict_col};">{prob*100:.1f}%</div></div>', unsafe_allow_html=True)
         with m2: st.markdown(f'<div class="mbox"><div class="lbl">Verdict</div><div class="val" style="font-size:1.1rem;color:{verdict_col};">{verdict_txt}</div></div>', unsafe_allow_html=True)
@@ -600,7 +1082,7 @@ elif st.session_state["page"] == "results":
 
     # ── EXPLANATION ───────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">📋 Why This Prediction?</div>', unsafe_allow_html=True)
-    st.markdown('<p style="color:#C0CFDF;font-size:1rem;font-weight:500;margin-bottom:1.2rem;">Each factor below shows how this customer\'s profile influenced the prediction. Risk factors are shown first.</p>', unsafe_allow_html=True)
+    st.markdown('<p style="color:#C0CFDF;font-size:1rem;font-weight:500;margin-bottom:1.2rem;">Each factor below shows how this customer\'s profile influenced the prediction.</p>', unsafe_allow_html=True)
 
     css_map = {"risk":"exp-risk","warn":"exp-warn","safe":"exp-safe"}
     half = (len(factors) + 1) // 2
@@ -620,7 +1102,7 @@ elif st.session_state["page"] == "results":
         if customer["IsActiveMember"] == 0:
             rec_items.append("📲 Launch an immediate re-engagement campaign — a personalised call or email from a relationship manager.")
         if customer["NumOfProducts"] == 1:
-            rec_items.append("🎁 Offer a cross-sell incentive such as a credit card, savings plan, or mortgage consultation to deepen product ties.")
+            rec_items.append("🎁 Offer a cross-sell incentive such as a credit card, savings plan, or mortgage consultation.")
         if customer["Geography"] == "Germany":
             rec_items.append("🌍 Review Germany-specific pricing and service offerings — competitive pressure is highest in this region.")
         if customer["Age"] >= 50:
@@ -628,7 +1110,7 @@ elif st.session_state["page"] == "results":
         if customer["Tenure"] <= 1:
             rec_items.append("🤝 Assign a dedicated onboarding advisor — early-tenure churn can be prevented with personalised support.")
         if customer["Balance"] == 0:
-            rec_items.append("💳 Encourage account activation through zero-fee promotions or cashback offers to increase engagement.")
+            rec_items.append("💳 Encourage account activation through zero-fee promotions or cashback offers.")
         if not rec_items:
             rec_items.append("⚠️ Multiple churn risk signals detected. A proactive outreach call from a senior relationship manager is strongly recommended.")
         rec_items.append("📊 Flag this customer for the retention team's priority watchlist immediately.")
