@@ -82,7 +82,6 @@ st.markdown("""
 }
 
 html, body,
-[class*="css"],
 .stApp,
 [data-testid="stAppViewContainer"],
 [data-testid="stAppViewBlockContainer"],
@@ -95,6 +94,30 @@ div[data-testid="stHorizontalBlock"] {
     color: #FFFFFF !important;
     font-family: 'DM Sans', sans-serif !important;
 }
+
+/* ── BUTTON TEXT FIX: stop white bleeding into button labels ── */
+/* Streamlit wraps button text in <p> tags; target them directly */
+div.stButton > button { color: #FFE08A !important; }
+div.stButton > button p { color: inherit !important; }
+div.stButton > button:hover { opacity: 0.9; }
+
+/* Specific overrides per button class */
+.predict-btn div.stButton > button,
+.predict-btn div.stButton > button p { color: #0B1D3A !important; }
+
+.primary-btn div.stButton > button,
+.primary-btn div.stButton > button p { color: #0B1D3A !important; }
+
+.sec-btn div.stButton > button,
+.sec-btn div.stButton > button p,
+.back-btn div.stButton > button,
+.back-btn div.stButton > button p { color: #FFE08A !important; }
+
+.danger-btn div.stButton > button,
+.danger-btn div.stButton > button p { color: #FF5555 !important; }
+
+div.stDownloadButton > button { color: #0B1D3A !important; }
+div.stDownloadButton > button p { color: #0B1D3A !important; }
 .main .block-container {
     padding-top: 2rem;
     padding-bottom: 3rem;
@@ -423,7 +446,7 @@ div[data-baseweb="select"] div {
 .summary-table td:first-child { color:#C0CFDF; width:45%; font-weight:700; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em; }
 
 /* ── Predict button ── */
-.predict-btn > button {
+.predict-btn div.stButton > button {
     background: linear-gradient(135deg,#C9A84C,#FFE08A) !important;
     color: #0B1D3A !important;
     font-size: 1.2rem !important;
@@ -435,15 +458,11 @@ div[data-baseweb="select"] div {
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
-.predict-btn > button p,
-.predict-btn > button span {
-    color: #0B1D3A !important;
-    font-weight: 800 !important;
-}
+.predict-btn div.stButton > button p,
+.predict-btn div.stButton > button span { color: #0B1D3A !important; font-weight: 800 !important; }
 
 /* ── Primary button (login/register) ── */
-.primary-btn > button,
-.primary-btn > button:hover {
+.primary-btn div.stButton > button {
     background: linear-gradient(135deg,#C9A84C,#FFE08A) !important;
     color: #0B1D3A !important;
     font-size: 1rem !important;
@@ -455,15 +474,12 @@ div[data-baseweb="select"] div {
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
-.primary-btn > button p,
-.primary-btn > button span {
-    color: #0B1D3A !important;
-    font-weight: 800 !important;
-}
+.primary-btn div.stButton > button p,
+.primary-btn div.stButton > button span { color: #0B1D3A !important; font-weight: 800 !important; }
 
 /* ── Back / secondary button ── */
-.back-btn > button,
-.sec-btn > button {
+.back-btn div.stButton > button,
+.sec-btn div.stButton > button {
     background-color: #1a3560 !important;
     color: #FFE08A !important;
     font-weight: 700 !important;
@@ -472,16 +488,13 @@ div[data-baseweb="select"] div {
     padding: 0.6rem 1.8rem !important;
     font-size: 0.95rem !important;
 }
-.back-btn > button p,
-.back-btn > button span,
-.sec-btn > button p,
-.sec-btn > button span {
-    color: #FFE08A !important;
-    font-weight: 700 !important;
-}
+.back-btn div.stButton > button p,
+.back-btn div.stButton > button span,
+.sec-btn div.stButton > button p,
+.sec-btn div.stButton > button span { color: #FFE08A !important; font-weight: 700 !important; }
 
 /* ── Danger button ── */
-.danger-btn > button {
+.danger-btn div.stButton > button {
     background-color: #2d0f0f !important;
     color: #FF5555 !important;
     font-weight: 700 !important;
@@ -490,11 +503,8 @@ div[data-baseweb="select"] div {
     padding: 0.6rem 1.8rem !important;
     font-size: 0.95rem !important;
 }
-.danger-btn > button p,
-.danger-btn > button span {
-    color: #FF5555 !important;
-    font-weight: 700 !important;
-}
+.danger-btn div.stButton > button p,
+.danger-btn div.stButton > button span { color: #FF5555 !important; font-weight: 700 !important; }
 
 /* ── Global fallback: all Streamlit buttons show text ── */
 .stButton > button p,
