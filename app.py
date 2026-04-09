@@ -435,6 +435,11 @@ div[data-baseweb="select"] div {
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
+.predict-btn > button p,
+.predict-btn > button span {
+    color: #0B1D3A !important;
+    font-weight: 800 !important;
+}
 
 /* ── Primary button (login/register) ── */
 .primary-btn > button,
@@ -450,6 +455,11 @@ div[data-baseweb="select"] div {
     letter-spacing: 0.05em;
     text-transform: uppercase;
 }
+.primary-btn > button p,
+.primary-btn > button span {
+    color: #0B1D3A !important;
+    font-weight: 800 !important;
+}
 
 /* ── Back / secondary button ── */
 .back-btn > button,
@@ -462,6 +472,13 @@ div[data-baseweb="select"] div {
     padding: 0.6rem 1.8rem !important;
     font-size: 0.95rem !important;
 }
+.back-btn > button p,
+.back-btn > button span,
+.sec-btn > button p,
+.sec-btn > button span {
+    color: #FFE08A !important;
+    font-weight: 700 !important;
+}
 
 /* ── Danger button ── */
 .danger-btn > button {
@@ -472,6 +489,18 @@ div[data-baseweb="select"] div {
     border-radius: 8px !important;
     padding: 0.6rem 1.8rem !important;
     font-size: 0.95rem !important;
+}
+.danger-btn > button p,
+.danger-btn > button span {
+    color: #FF5555 !important;
+    font-weight: 700 !important;
+}
+
+/* ── Global fallback: all Streamlit buttons show text ── */
+.stButton > button p,
+.stButton > button span {
+    color: inherit !important;
+    font-weight: inherit !important;
 }
 
 strong { color: #FFE08A !important; }
