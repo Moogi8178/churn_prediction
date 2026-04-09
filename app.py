@@ -744,8 +744,7 @@ if st.session_state["page"] == "login":
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
-        st.markdown('<div class="auth-title">Sign In</div>', unsafe_allow_html=True)
+        st.markdown('<div class="auth-title" style="margin-top:1rem;">Sign In</div>', unsafe_allow_html=True)
         st.markdown('<div class="auth-subtitle">Enter your credentials to access the platform</div>', unsafe_allow_html=True)
 
         if st.session_state.get("reg_success"):
@@ -770,7 +769,7 @@ if st.session_state["page"] == "login":
         if st.button("Sign In →", use_container_width=True, key="do_login"):
             users = st.session_state["users"]
             entered_user = username.strip()
-            entered_pw   = password          # do NOT strip passwords
+            entered_pw   = password
             if entered_user in users and users[entered_user]["password_hash"] == _hash(entered_pw):
                 if remember:
                     st.session_state["saved_username"] = entered_user
@@ -797,14 +796,6 @@ if st.session_state["page"] == "login":
             st.session_state["page"] = "register"
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)  # auth-card
-
-        st.markdown("""
-        <div style="text-align:center;margin-top:1.5rem;color:#3A5A8A;font-size:0.82rem;">
-            Demo credentials &nbsp;|&nbsp; Admin: <strong style="color:#C0CFDF;">admin / admin123</strong>
-            &nbsp;|&nbsp; User: <strong style="color:#C0CFDF;">analyst / analyst123</strong>
-        </div>
-        """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -826,8 +817,7 @@ elif st.session_state["page"] == "register":
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown('<div class="auth-card">', unsafe_allow_html=True)
-        st.markdown('<div class="auth-title">Register</div>', unsafe_allow_html=True)
+        st.markdown('<div class="auth-title" style="margin-top:1rem;">Register</div>', unsafe_allow_html=True)
         st.markdown('<div class="auth-subtitle">Fill in your details to create a new account</div>', unsafe_allow_html=True)
 
         if st.session_state.get("auth_error"):
@@ -873,7 +863,6 @@ elif st.session_state["page"] == "register":
             st.session_state["page"] = "login"
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)  # auth-card
 
 
 # ══════════════════════════════════════════════════════════════════════════════
