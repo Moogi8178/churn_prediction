@@ -95,6 +95,81 @@ div[data-testid="stHorizontalBlock"] {
     font-family: 'DM Sans', sans-serif !important;
 }
 
+/* ══════════════════════════════════════════════════
+   PER-PAGE BACKGROUND IMAGES  (bank / finance theme)
+   Each page gets a unique Unsplash photo with a dark
+   navy overlay so all text remains readable.
+   ══════════════════════════════════════════════════ */
+
+/* LOGIN page — grand bank building exterior */
+[data-page="login"] .stApp,
+.stApp[data-page="login"] {
+    background-image:
+        linear-gradient(135deg, rgba(11,29,58,0.88) 0%, rgba(17,34,68,0.82) 100%),
+        url('https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=1920&q=80') !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-attachment: fixed !important;
+}
+
+/* REGISTER page — modern bank interior lobby */
+[data-page="register"] .stApp,
+.stApp[data-page="register"] {
+    background-image:
+        linear-gradient(135deg, rgba(11,29,58,0.88) 0%, rgba(17,34,68,0.82) 100%),
+        url('https://images.unsplash.com/photo-1501167786227-4cba60f6d58f?w=1920&q=80') !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-attachment: fixed !important;
+}
+
+/* INPUT / PREDICT page — financial data / analytics desk */
+[data-page="input"] .stApp,
+.stApp[data-page="input"] {
+    background-image:
+        linear-gradient(135deg, rgba(11,29,58,0.90) 0%, rgba(17,34,68,0.85) 100%),
+        url('https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=1920&q=80') !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-attachment: fixed !important;
+}
+
+/* RESULTS page — customer meeting / financial review */
+[data-page="results"] .stApp,
+.stApp[data-page="results"] {
+    background-image:
+        linear-gradient(135deg, rgba(11,29,58,0.90) 0%, rgba(17,34,68,0.85) 100%),
+        url('https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1920&q=80') !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-attachment: fixed !important;
+}
+
+/* ADMIN page — executive dashboard / control room */
+[data-page="admin"] .stApp,
+.stApp[data-page="admin"] {
+    background-image:
+        linear-gradient(135deg, rgba(11,29,58,0.92) 0%, rgba(17,34,68,0.88) 100%),
+        url('https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1920&q=80') !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-attachment: fixed !important;
+}
+
+/* Universal fallback background (covers all inner containers) */
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewBlockContainer"] {
+    background: transparent !important;
+}
+[data-testid="block-container"],
+.main {
+    background: transparent !important;
+}
+div[data-testid="stVerticalBlock"],
+div[data-testid="stHorizontalBlock"] {
+    background: transparent !important;
+}
+
 /* ── BUTTON TEXT FIX: stop white bleeding into button labels ── */
 /* Streamlit wraps button text in <p> tags; target them directly */
 div.stButton > button { color: #FFE08A !important; }
@@ -522,6 +597,50 @@ hr { border-color: #3A5A8A !important; }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# HELPER — inject page name into DOM so per-page CSS backgrounds can fire
+# ══════════════════════════════════════════════════════════════════════════════
+def set_page_bg(page_name: str):
+    """
+    Injects a <script> that sets data-page="<page_name>" on .stApp so the
+    per-page CSS background-image rules activate.
+    Also injects an inline <style> block as a reliable fallback using a
+    direct class applied to stApp.
+    """
+    bg_map = {
+        "login":    ("https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=1920&q=80",  "rgba(11,29,58,0.88), rgba(17,34,68,0.82)"),
+        "register": ("https://images.unsplash.com/photo-1501167786227-4cba60f6d58f?w=1920&q=80",  "rgba(11,29,58,0.88), rgba(17,34,68,0.82)"),
+        "input":    ("https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=1920&q=80",     "rgba(11,29,58,0.90), rgba(17,34,68,0.85)"),
+        "results":  ("https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1920&q=80",     "rgba(11,29,58,0.90), rgba(17,34,68,0.85)"),
+        "admin":    ("https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1920&q=80",  "rgba(11,29,58,0.92), rgba(17,34,68,0.88)"),
+    }
+    img_url, gradient = bg_map.get(page_name, bg_map["login"])
+    st.markdown(f"""
+    <style>
+    .stApp {{
+        background-image: linear-gradient(135deg, {gradient}),
+                          url('{img_url}') !important;
+        background-size: cover !important;
+        background-position: center center !important;
+        background-attachment: fixed !important;
+        background-repeat: no-repeat !important;
+    }}
+    [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewBlockContainer"],
+    [data-testid="block-container"],
+    .main,
+    div[data-testid="stVerticalBlock"],
+    div[data-testid="stHorizontalBlock"] {{
+        background: transparent !important;
+    }}
+    </style>
+    <script>
+        const app = window.parent.document.querySelector('.stApp');
+        if (app) app.setAttribute('data-page', '{page_name}');
+    </script>
+    """, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # HELPER — TOP NAV BAR (shown when logged in)
 # ══════════════════════════════════════════════════════════════════════════════
 def render_nav():
@@ -729,7 +848,7 @@ def prob_bar_fig(prob, will_churn):
 # ██████████████████  PAGE — LOGIN  ████████████████████████████████████████████
 # ══════════════════════════════════════════════════════════════════════════════
 if st.session_state["page"] == "login":
-
+    set_page_bg("login")
     _, center, _ = st.columns([1, 2, 1])
     with center:
         st.markdown("""
@@ -802,7 +921,7 @@ if st.session_state["page"] == "login":
 # ██████████████████  PAGE — REGISTER  ████████████████████████████████████████
 # ══════════════════════════════════════════════════════════════════════════════
 elif st.session_state["page"] == "register":
-
+    set_page_bg("register")
     _, center, _ = st.columns([1, 2, 1])
     with center:
         st.markdown("""
@@ -874,6 +993,7 @@ elif st.session_state["page"] == "admin":
         st.session_state["page"] = "login"
         st.rerun()
 
+    set_page_bg("admin")
     render_nav()
 
     st.markdown("""
@@ -1067,6 +1187,7 @@ elif st.session_state["page"] == "input":
         st.session_state["page"] = "login"
         st.rerun()
 
+    set_page_bg("input")
     render_nav()
 
     st.markdown("""
@@ -1158,6 +1279,7 @@ elif st.session_state["page"] == "results":
         st.session_state["page"] = "login"
         st.rerun()
 
+    set_page_bg("results")
     render_nav()
 
     if "customer" not in st.session_state or not ready:
