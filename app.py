@@ -55,6 +55,10 @@ for key, default in [
     ("current_role", None),
     ("auth_error", ""),
     ("reg_success", False),
+    ("prediction_log", []),     # list of dicts: {user, timestamp, customer, prob, verdict}
+    ("saved_username", ""),     # remember-me: saved username
+    ("saved_password", ""),     # remember-me: saved password
+    ("remember_me", False),     # remember-me checkbox state
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -713,13 +717,27 @@ if st.session_state["page"] == "login":
             st.markdown(f'<div class="alert-error">⚠️ {st.session_state["auth_error"]}</div>', unsafe_allow_html=True)
             st.session_state["auth_error"] = ""
 
-        username = st.text_input("Username", placeholder="Enter username", key="login_user")
-        password = st.text_input("Password", type="password", placeholder="Enter password", key="login_pw")
+        # Pre-fill if remember-me was checked previously
+        default_user = st.session_state.get("saved_username", "")
+        default_pw   = st.session_state.get("saved_password", "")
+
+        username = st.text_input("Username", value=default_user, placeholder="Enter username", key="login_user")
+        password = st.text_input("Password", value=default_pw, type="password", placeholder="Enter password", key="login_pw")
+        remember = st.checkbox("🔐 Remember my password", value=st.session_state.get("remember_me", False), key="remember_me_box")
 
         st.markdown('<div class="primary-btn" style="margin-top:1.2rem;">', unsafe_allow_html=True)
         if st.button("Sign In →", use_container_width=True, key="do_login"):
             users = st.session_state["users"]
             if username in users and users[username]["password_hash"] == _hash(password):
+                # Save or clear remember-me credentials
+                if remember:
+                    st.session_state["saved_username"] = username
+                    st.session_state["saved_password"] = password
+                    st.session_state["remember_me"]    = True
+                else:
+                    st.session_state["saved_username"] = ""
+                    st.session_state["saved_password"] = ""
+                    st.session_state["remember_me"]    = False
                 st.session_state["logged_in"]    = True
                 st.session_state["current_user"] = username
                 st.session_state["current_role"] = users[username]["role"]
@@ -936,6 +954,78 @@ elif st.session_state["page"] == "admin":
             with mcols[i]:
                 st.markdown(f'<div class="mbox"><div class="lbl">{k}</div><div class="val">{v:.1%}</div></div>', unsafe_allow_html=True)
 
+    # ── Prediction Report ──────────────────────────────────────────────────
+    st.markdown('<div class="section-title">📥 Customer Prediction Report</div>', unsafe_allow_html=True)
+
+    log = st.session_state.get("prediction_log", [])
+    if not log:
+        st.markdown('<p style="color:#C0CFDF;">No predictions have been made yet. Reports will appear here once users run predictions.</p>', unsafe_allow_html=True)
+    else:
+        log_df = pd.DataFrame(log)
+
+        # Summary stats row
+        total_preds  = len(log_df)
+        churn_preds  = (log_df["Verdict"] == "CHURN").sum()
+        retain_preds = total_preds - churn_preds
+        churn_rate   = churn_preds / total_preds * 100
+
+        rp1, rp2, rp3, rp4 = st.columns(4)
+        with rp1: st.markdown(f'<div class="mbox"><div class="lbl">Total Predictions</div><div class="val">{total_preds}</div></div>', unsafe_allow_html=True)
+        with rp2: st.markdown(f'<div class="mbox"><div class="lbl">Predicted Churn</div><div class="val" style="color:#FF5555;">{churn_preds}</div></div>', unsafe_allow_html=True)
+        with rp3: st.markdown(f'<div class="mbox"><div class="lbl">Predicted Retain</div><div class="val" style="color:#2ECC8A;">{retain_preds}</div></div>', unsafe_allow_html=True)
+        with rp4: st.markdown(f'<div class="mbox"><div class="lbl">Churn Rate</div><div class="val" style="color:#FF9933;">{churn_rate:.1f}%</div></div>', unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Show table
+        display_cols = ["timestamp", "user", "Geography", "Gender", "Age", "CreditScore",
+                        "Tenure", "Balance", "NumOfProducts", "EstimatedSalary",
+                        "Churn Probability", "Verdict"]
+        available_cols = [c for c in display_cols if c in log_df.columns]
+        preview_df = log_df[available_cols].copy()
+        preview_df.columns = [c.replace("_", " ").title() for c in available_cols]
+
+        # Colour-code Verdict column
+        def style_verdict(val):
+            color = "#FF5555" if val == "CHURN" else "#2ECC8A"
+            return f"color: {color}; font-weight: bold;"
+
+        rows_html = ""
+        for _, row in log_df[available_cols].iterrows():
+            verdict_color = "#FF5555" if row.get("Verdict") == "CHURN" else "#2ECC8A"
+            cells = ""
+            for col in available_cols:
+                val = row[col]
+                if col == "Verdict":
+                    cells += f'<td style="color:{verdict_color};font-weight:700;">{val}</td>'
+                elif col == "Balance":
+                    cells += f'<td>${float(val):,.0f}</td>'
+                elif col == "Churn Probability":
+                    cells += f'<td>{float(val):.1f}%</td>'
+                else:
+                    cells += f'<td>{val}</td>'
+            rows_html += f"<tr>{cells}</tr>"
+
+        header_html = "".join(f"<th>{c.replace('_',' ').title()}</th>" for c in available_cols)
+        st.markdown(f"""
+        <div style="background:#112244;border:1.5px solid #3A5A8A;border-radius:14px;overflow:auto;margin-bottom:1.5rem;max-height:400px;">
+            <table class="admin-table">
+                <thead><tr>{header_html}</tr></thead>
+                <tbody>{rows_html}</tbody>
+            </table>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Download CSV button
+        csv_data = log_df[available_cols].to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="⬇️ Download Full Report (CSV)",
+            data=csv_data,
+            file_name="churn_prediction_report.csv",
+            mime="text/csv",
+            key="download_report_csv",
+        )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ██████████████████  PAGE — INPUT FORM  ███████████████████████████████████████
@@ -964,14 +1054,14 @@ elif st.session_state["page"] == "input":
     c1, c2, c3 = st.columns(3)
     with c1: geography = st.selectbox("Geography", ["France","Germany","Spain"])
     with c2: gender    = st.selectbox("Gender", ["Female","Male"])
-    with c3: age       = st.slider("Age", 18, 92, 42)
+    with c3: age       = st.number_input("Age", min_value=18, max_value=92, value=42, step=1)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Account details
     st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🏦 Account Details</div>', unsafe_allow_html=True)
     c4, c5, c6 = st.columns(3)
-    with c4: credit_score = st.slider("Credit Score", 300, 850, 620)
+    with c4: credit_score = st.number_input("Credit Score", min_value=300, max_value=850, value=620, step=1)
     with c5: tenure       = st.slider("Tenure (years)", 0, 10, 3)
     with c6: num_products = st.selectbox("Number of Products", [1,2,3,4])
     c7, c8 = st.columns(2)
@@ -990,7 +1080,8 @@ elif st.session_state["page"] == "input":
     # Predict button
     st.markdown('<div class="predict-btn">', unsafe_allow_html=True)
     if st.button("🔍  Predict Customer Churn", use_container_width=True):
-        st.session_state["customer"] = {
+        import datetime
+        customer_data = {
             "CreditScore":     credit_score,
             "Geography":       geography,
             "Gender":          gender,
@@ -1002,6 +1093,26 @@ elif st.session_state["page"] == "input":
             "IsActiveMember":  1 if is_active   == "Yes" else 0,
             "EstimatedSalary": estimated_sal,
         }
+        st.session_state["customer"] = customer_data
+        # Log this prediction
+        if ready:
+            _prob, _churn = run_predict(customer_data)
+            st.session_state["prediction_log"].append({
+                "user":      st.session_state["current_user"],
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Geography": geography,
+                "Gender":    gender,
+                "Age":       age,
+                "CreditScore": credit_score,
+                "Tenure":    tenure,
+                "Balance":   balance,
+                "NumOfProducts": num_products,
+                "HasCrCard": 1 if has_cr_card == "Yes" else 0,
+                "IsActiveMember": 1 if is_active == "Yes" else 0,
+                "EstimatedSalary": estimated_sal,
+                "Churn Probability": round(_prob * 100, 2),
+                "Verdict":   "CHURN" if _churn else "RETAIN",
+            })
         st.session_state["page"] = "results"
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
