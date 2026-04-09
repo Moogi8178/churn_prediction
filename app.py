@@ -717,44 +717,34 @@ if st.session_state["page"] == "login":
             st.markdown(f'<div class="alert-error">⚠️ {st.session_state["auth_error"]}</div>', unsafe_allow_html=True)
             st.session_state["auth_error"] = ""
 
-        # Pre-fill widget keys from saved credentials BEFORE the widgets render
-        # (only seed when the key doesn't exist yet or when remember-me is active
-        #  and the key hasn't been touched this run)
-        if "login_user" not in st.session_state:
-            st.session_state["login_user"] = st.session_state.get("saved_username", "")
-        if "login_pw" not in st.session_state:
-            st.session_state["login_pw"] = st.session_state.get("saved_password", "")
-        if "remember_me_box" not in st.session_state:
-            st.session_state["remember_me_box"] = st.session_state.get("remember_me", False)
+        # Use return values directly — never rely on session_state keys for
+        # password inputs because Streamlit does not update them reliably on rerun.
+        saved_user = st.session_state.get("saved_username", "")
+        saved_pw   = st.session_state.get("saved_password", "")
+        saved_rem  = st.session_state.get("remember_me", False)
 
-        st.text_input("Username", placeholder="Enter username", key="login_user")
-        st.text_input("Password", type="password", placeholder="Enter password", key="login_pw")
-        st.checkbox("🔐 Remember my password", key="remember_me_box")
+        username = st.text_input("Username", value=saved_user, placeholder="Enter username")
+        password = st.text_input("Password", value=saved_pw,   type="password", placeholder="Enter password")
+        remember = st.checkbox("🔐 Remember my password", value=saved_rem)
 
         st.markdown('<div class="primary-btn" style="margin-top:1.2rem;">', unsafe_allow_html=True)
         if st.button("Sign In →", use_container_width=True, key="do_login"):
-            # Always read the live widget values from session state
-            username = st.session_state["login_user"]
-            password = st.session_state["login_pw"]
-            remember = st.session_state["remember_me_box"]
             users = st.session_state["users"]
-            if username in users and users[username]["password_hash"] == _hash(password):
-                # Save or clear remember-me credentials
+            entered_user = username.strip()
+            entered_pw   = password          # do NOT strip passwords
+            if entered_user in users and users[entered_user]["password_hash"] == _hash(entered_pw):
                 if remember:
-                    st.session_state["saved_username"] = username
-                    st.session_state["saved_password"] = password
+                    st.session_state["saved_username"] = entered_user
+                    st.session_state["saved_password"] = entered_pw
                     st.session_state["remember_me"]    = True
                 else:
                     st.session_state["saved_username"] = ""
                     st.session_state["saved_password"] = ""
                     st.session_state["remember_me"]    = False
-                # Clear widget keys so they re-seed correctly on next logout
-                for k in ["login_user", "login_pw", "remember_me_box"]:
-                    st.session_state.pop(k, None)
                 st.session_state["logged_in"]    = True
-                st.session_state["current_user"] = username
-                st.session_state["current_role"] = users[username]["role"]
-                st.session_state["page"]         = "admin" if users[username]["role"] == "admin" else "input"
+                st.session_state["current_user"] = entered_user
+                st.session_state["current_role"] = users[entered_user]["role"]
+                st.session_state["page"]         = "admin" if users[entered_user]["role"] == "admin" else "input"
                 st.rerun()
             else:
                 st.session_state["auth_error"] = "Invalid username or password."
