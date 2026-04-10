@@ -1168,314 +1168,293 @@ elif st.session_state["page"] == "admin":
         </div>
         """, unsafe_allow_html=True)
 
-        # ── PDF Report Generator ──────────────────────────────────────────────
+        # ── PDF Report Generator (pure matplotlib — no extra dependencies) ──
         def generate_pdf_report(log_records):
             import io, datetime
             import matplotlib
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
-            import matplotlib.patches as mpatches
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib import colors
-            from reportlab.lib.units import cm
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-            from reportlab.platypus import (
-                SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-                HRFlowable, Image as RLImage, PageBreak, KeepTogether,
-            )
-            from reportlab.graphics.shapes import Drawing, Rect, String
-            from reportlab.lib.colors import HexColor
+            import matplotlib.patches as patches
+            from matplotlib.backends.backend_pdf import PdfPages
 
-            # ── Colour palette ────────────────────────────────────────────────
-            NAVY     = HexColor("#0B1D3A")
-            CARD     = HexColor("#112244")
-            GOLD     = HexColor("#C9A84C")
-            GOLD2    = HexColor("#FFE08A")
-            WHITE    = HexColor("#FFFFFF")
-            MUTED    = HexColor("#C0CFDF")
-            RED      = HexColor("#E85555")
-            GREEN    = HexColor("#2ECC8A")
-            AMBER    = HexColor("#FF9933")
-            BORDER   = HexColor("#3A5A8A")
+            # ── Palette ───────────────────────────────────────────────────────
+            NAVY   = "#0B1D3A"
+            CARD   = "#112244"
+            CARD2  = "#0d1e3d"
+            GOLD   = "#C9A84C"
+            GOLD2  = "#FFE08A"
+            WHITE  = "#FFFFFF"
+            MUTED  = "#C0CFDF"
+            RED    = "#E85555"
+            GREEN  = "#2ECC8A"
+            AMBER  = "#FF9933"
+            BORDER = "#3A5A8A"
 
-            buf = io.BytesIO()
-            doc = SimpleDocTemplate(
-                buf,
-                pagesize=A4,
-                leftMargin=2*cm, rightMargin=2*cm,
-                topMargin=2.2*cm, bottomMargin=2.2*cm,
-            )
-            W, H = A4
-            content_width = W - 4*cm
-
-            # ── Styles ────────────────────────────────────────────────────────
-            base = getSampleStyleSheet()
-
-            def ps(name, **kw):
-                defaults = dict(fontName="Helvetica", fontSize=11,
-                                textColor=WHITE, leading=16)
-                defaults.update(kw)
-                return ParagraphStyle(name, **defaults)
-
-            sTitle    = ps("sTitle",    fontName="Helvetica-Bold", fontSize=28,
-                           textColor=GOLD2, alignment=TA_CENTER, leading=36, spaceAfter=4)
-            sSubtitle = ps("sSubtitle", fontSize=13, textColor=MUTED,
-                           alignment=TA_CENTER, leading=18, spaceAfter=2)
-            sSection  = ps("sSection",  fontName="Helvetica-Bold", fontSize=13,
-                           textColor=GOLD, leading=18, spaceBefore=10, spaceAfter=4)
-            sField    = ps("sField",    fontSize=10, textColor=MUTED,  leading=14)
-            sValue    = ps("sValue",    fontName="Helvetica-Bold", fontSize=10,
-                           textColor=WHITE, leading=14)
-            sVerdict  = ps("sVerdict",  fontName="Helvetica-Bold", fontSize=16,
-                           alignment=TA_CENTER, leading=22)
-            sFooter   = ps("sFooter",   fontSize=8,  textColor=MUTED,
-                           alignment=TA_CENTER, leading=11)
-            sCustHead = ps("sCustHead", fontName="Helvetica-Bold", fontSize=14,
-                           textColor=GOLD2, leading=20, spaceBefore=6, spaceAfter=2)
-            sBody     = ps("sBody",     fontSize=10, textColor=WHITE, leading=15)
-
-            # ── Page background / header callback ─────────────────────────────
-            def on_page(canvas_obj, doc_obj):
-                canvas_obj.saveState()
-                canvas_obj.setFillColor(NAVY)
-                canvas_obj.rect(0, 0, W, H, fill=1, stroke=0)
-                # Gold top bar
-                canvas_obj.setFillColor(GOLD)
-                canvas_obj.rect(0, H - 1.1*cm, W, 1.1*cm, fill=1, stroke=0)
-                canvas_obj.setFillColor(NAVY)
-                canvas_obj.setFont("Helvetica-Bold", 11)
-                canvas_obj.drawCentredString(W/2, H - 0.72*cm,
-                    "CUSTOMER CHURN PREDICTION REPORT  |  CONFIDENTIAL")
-                # Gold bottom bar
-                canvas_obj.setFillColor(CARD)
-                canvas_obj.rect(0, 0, W, 1.0*cm, fill=1, stroke=0)
-                canvas_obj.setFillColor(MUTED)
-                canvas_obj.setFont("Helvetica", 8)
-                canvas_obj.drawString(2*cm, 0.35*cm,
-                    f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                canvas_obj.drawRightString(W - 2*cm, 0.35*cm,
-                    f"Page {doc_obj.page}")
-                canvas_obj.restoreState()
-
-            # ── Helper: churn probability bar chart (matplotlib → BytesIO) ────
-            def make_prob_chart(prob, will_churn, width_px=480, height_px=110):
-                fig, ax = plt.subplots(figsize=(width_px/96, height_px/96), dpi=96)
-                fig.patch.set_facecolor("#112244")
-                ax.set_facecolor("#112244")
-
-                bar_color = "#E85555" if will_churn else "#2ECC8A"
-                bg_color  = "#1a3560"
-
-                ax.barh(0, 1,   height=0.55, color=bg_color,  left=0)
-                ax.barh(0, prob, height=0.55, color=bar_color, left=0)
-                ax.axvline(0.5, color="#FFE08A", linewidth=1.8, linestyle="--", alpha=0.9)
-
-                ax.set_xlim(0, 1)
-                ax.set_ylim(-0.55, 0.55)
-                ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
-                ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"],
-                                   color="#C0CFDF", fontsize=8)
-                ax.set_yticks([])
-                for spine in ax.spines.values():
-                    spine.set_visible(False)
-                ax.tick_params(axis="x", colors="#C0CFDF", length=0)
-
-                label = f"{prob*100:.1f}%"
-                ax.text(min(prob + 0.02, 0.97), 0, label,
-                        va="center", ha="left" if prob < 0.85 else "right",
-                        color=bar_color, fontsize=10, fontweight="bold")
-                ax.text(0.505, 0.42, "50% threshold",
-                        va="bottom", ha="left",
-                        color="#FFE08A", fontsize=7, transform=ax.get_xaxis_transform())
-
-                plt.tight_layout(pad=0.3)
-                img_buf = io.BytesIO()
-                fig.savefig(img_buf, format="png", dpi=96,
-                            facecolor=fig.get_facecolor())
-                plt.close(fig)
-                img_buf.seek(0)
-                return img_buf
-
-            # ── Story assembly ────────────────────────────────────────────────
-            story = []
-            now_str = datetime.datetime.now().strftime("%B %d, %Y  |  %H:%M:%S")
-
-            # Cover block
-            story.append(Spacer(1, 1.2*cm))
-            story.append(Paragraph("🏦 Customer Churn Prediction", sTitle))
-            story.append(Paragraph("Prediction Analysis Report", sSubtitle))
-            story.append(Spacer(1, 0.4*cm))
-            story.append(HRFlowable(width="100%", thickness=2,
-                                    color=GOLD, spaceAfter=10))
-
-            # Report metadata table
+            now_str     = datetime.datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
             admin_user  = st.session_state.get("current_user", "N/A")
             admin_name  = st.session_state["users"].get(admin_user, {}).get("name", "N/A")
-            meta_data = [
-                ["Report Generated By:", admin_name],
-                ["Username:", admin_user],
-                ["Report Date:", now_str],
-                ["Total Predictions:", str(len(log_records))],
-                ["Churn Predicted:",   str(sum(1 for r in log_records if r.get("Verdict") == "CHURN"))],
-                ["Retain Predicted:",  str(sum(1 for r in log_records if r.get("Verdict") == "RETAIN"))],
-            ]
-            meta_tbl = Table(meta_data, colWidths=[5*cm, content_width - 5*cm])
-            meta_tbl.setStyle(TableStyle([
-                ("BACKGROUND",  (0,0), (0,-1), CARD),
-                ("BACKGROUND",  (1,0), (1,-1), NAVY),
-                ("TEXTCOLOR",   (0,0), (0,-1), MUTED),
-                ("TEXTCOLOR",   (1,0), (1,-1), WHITE),
-                ("FONTNAME",    (0,0), (0,-1), "Helvetica"),
-                ("FONTNAME",    (1,0), (1,-1), "Helvetica-Bold"),
-                ("FONTSIZE",    (0,0), (-1,-1), 10),
-                ("TOPPADDING",  (0,0), (-1,-1), 7),
-                ("BOTTOMPADDING",(0,0),(-1,-1), 7),
-                ("LEFTPADDING", (0,0), (-1,-1), 10),
-                ("GRID",        (0,0), (-1,-1), 0.5, BORDER),
-                ("ROWBACKGROUNDS",(0,0),(-1,-1),[CARD, HexColor("#0d1e3d")]),
-            ]))
-            story.append(meta_tbl)
-            story.append(Spacer(1, 0.6*cm))
-            story.append(HRFlowable(width="100%", thickness=1,
-                                    color=BORDER, spaceAfter=6))
 
-            # ── Per-customer sections ─────────────────────────────────────────
-            for idx, rec in enumerate(log_records, 1):
-                prob      = float(rec.get("Churn Probability", 0)) / 100.0
-                verdict   = rec.get("Verdict", "UNKNOWN")
-                will_churn = verdict == "CHURN"
-                v_color    = RED if will_churn else GREEN
-                risk_label = "HIGH RISK" if prob >= 0.6 else ("MEDIUM RISK" if prob >= 0.35 else "LOW RISK")
-                risk_color = RED if prob >= 0.6 else (AMBER if prob >= 0.35 else GREEN)
+            buf = io.BytesIO()
 
-                block = []
+            # A4 in inches
+            A4W, A4H = 8.27, 11.69
 
-                # Customer header
-                block.append(Spacer(1, 0.3*cm))
-                block.append(Paragraph(
-                    f"Customer #{idx}  —  Predicted by: {rec.get('user','N/A')}  |  {rec.get('timestamp','N/A')}",
-                    sCustHead))
-                block.append(HRFlowable(width="100%", thickness=1,
-                                        color=GOLD, spaceAfter=6))
+            def styled_fig():
+                fig = plt.figure(figsize=(A4W, A4H), facecolor=NAVY)
+                return fig
 
-                # Verdict banner
-                v_text = "✖  WILL CHURN" if will_churn else "✔  WILL NOT CHURN"
-                v_bg   = HexColor("#2a0808") if will_churn else HexColor("#062d16")
-                v_para = Paragraph(
-                    f'<font color="{"#E85555" if will_churn else "#2ECC8A"}">'
-                    f'<b>{v_text}</b></font>', sVerdict)
-                verdict_tbl = Table([[v_para]], colWidths=[content_width])
-                verdict_tbl.setStyle(TableStyle([
-                    ("BACKGROUND",   (0,0), (-1,-1), v_bg),
-                    ("TOPPADDING",   (0,0), (-1,-1), 10),
-                    ("BOTTOMPADDING",(0,0), (-1,-1), 10),
-                    ("LEFTPADDING",  (0,0), (-1,-1), 10),
-                    ("BOX",          (0,0), (-1,-1), 1.5,
-                     RED if will_churn else GREEN),
-                    ("ROWBACKGROUNDS",(0,0),(-1,-1),[v_bg]),
-                ]))
-                block.append(verdict_tbl)
-                block.append(Spacer(1, 0.25*cm))
+            def header_bar(fig, page_num, total_pages):
+                """Gold top bar + dark bottom bar on every page."""
+                # top bar
+                ax_top = fig.add_axes([0, 0.965, 1, 0.035])
+                ax_top.set_facecolor(GOLD)
+                ax_top.set_xlim(0,1); ax_top.set_ylim(0,1)
+                ax_top.axis("off")
+                ax_top.text(0.5, 0.45,
+                    "CUSTOMER CHURN PREDICTION REPORT  |  CONFIDENTIAL",
+                    ha="center", va="center", fontsize=7.5,
+                    fontweight="bold", color=NAVY)
+                # bottom bar
+                ax_bot = fig.add_axes([0, 0, 1, 0.025])
+                ax_bot.set_facecolor(CARD)
+                ax_bot.set_xlim(0,1); ax_bot.set_ylim(0,1)
+                ax_bot.axis("off")
+                ax_bot.text(0.02, 0.4, f"Generated: {now_str}",
+                    ha="left", va="center", fontsize=6.5, color=MUTED)
+                ax_bot.text(0.98, 0.4, f"Page {page_num} of {total_pages}",
+                    ha="right", va="center", fontsize=6.5, color=MUTED)
 
-                # Probability bar chart
-                chart_buf = make_prob_chart(prob, will_churn)
-                chart_img = RLImage(chart_buf,
-                                    width=content_width,
-                                    height=content_width * (110/480))
-                block.append(chart_img)
-                block.append(Spacer(1, 0.15*cm))
+            # ── count pages: 1 cover + 1 per customer ────────────────────────
+            total_pages = 1 + len(log_records)
 
-                # Risk + probability summary row
-                summary_data = [
-                    [
-                        Paragraph('<font color="#C0CFDF">Churn Probability</font>', sField),
-                        Paragraph('<font color="#C0CFDF">Verdict</font>', sField),
-                        Paragraph('<font color="#C0CFDF">Risk Level</font>', sField),
-                    ],
-                    [
-                        Paragraph(f'<font color="{"#E85555" if will_churn else "#2ECC8A"}">'
-                                  f'<b>{prob*100:.1f}%</b></font>', sValue),
-                        Paragraph(f'<font color="{"#E85555" if will_churn else "#2ECC8A"}">'
-                                  f'<b>{verdict}</b></font>', sValue),
-                        Paragraph(f'<font color="{"#E85555" if prob>=0.6 else ("#FF9933" if prob>=0.35 else "#2ECC8A")}">'
-                                  f'<b>{risk_label}</b></font>', sValue),
-                    ],
+            with PdfPages(buf) as pdf:
+
+                # ════════════════════════════════════════════════════════════
+                # COVER PAGE
+                # ════════════════════════════════════════════════════════════
+                fig = styled_fig()
+                header_bar(fig, 1, total_pages)
+
+                ax = fig.add_axes([0.08, 0.06, 0.84, 0.89])
+                ax.set_facecolor(NAVY)
+                ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+                ax.axis("off")
+
+                # Title block
+                ax.add_patch(patches.FancyBboxPatch(
+                    (0, 0.72), 1, 0.22,
+                    boxstyle="round,pad=0.01",
+                    facecolor=CARD, edgecolor=GOLD, linewidth=2))
+                ax.text(0.5, 0.90, "Customer Churn Prediction",
+                    ha="center", va="center", fontsize=26,
+                    fontweight="bold", color=GOLD2)
+                ax.text(0.5, 0.80, "Prediction Analysis Report",
+                    ha="center", va="center", fontsize=14, color=MUTED)
+                ax.text(0.5, 0.74, f"Report Date: {now_str}",
+                    ha="center", va="center", fontsize=9, color=MUTED)
+
+                # Gold divider
+                ax.add_patch(patches.Rectangle((0, 0.715), 1, 0.004,
+                    facecolor=GOLD, edgecolor="none"))
+
+                # Meta info table
+                meta_rows = [
+                    ("Report Generated By", admin_name),
+                    ("Username",            admin_user),
+                    ("Total Predictions",   str(len(log_records))),
+                    ("Churn Predicted",     str(sum(1 for r in log_records if r.get("Verdict")=="CHURN"))),
+                    ("Retain Predicted",    str(sum(1 for r in log_records if r.get("Verdict")=="RETAIN"))),
+                    ("Churn Rate",          f"{sum(1 for r in log_records if r.get('Verdict')=='CHURN')/max(len(log_records),1)*100:.1f}%"),
                 ]
-                col3 = content_width / 3
-                sum_tbl = Table(summary_data, colWidths=[col3]*3)
-                sum_tbl.setStyle(TableStyle([
-                    ("BACKGROUND",   (0,0), (-1,-1), CARD),
-                    ("TOPPADDING",   (0,0), (-1,-1), 8),
-                    ("BOTTOMPADDING",(0,0), (-1,-1), 8),
-                    ("LEFTPADDING",  (0,0), (-1,-1), 14),
-                    ("ALIGN",        (0,0), (-1,-1), "LEFT"),
-                    ("GRID",         (0,0), (-1,-1), 0.5, BORDER),
-                ]))
-                block.append(sum_tbl)
-                block.append(Spacer(1, 0.25*cm))
+                row_h = 0.072
+                start_y = 0.68
+                for i, (label, value) in enumerate(meta_rows):
+                    y = start_y - i * row_h
+                    bg = CARD if i % 2 == 0 else CARD2
+                    ax.add_patch(patches.Rectangle((0, y - row_h + 0.005),
+                        1, row_h - 0.005, facecolor=bg, edgecolor=BORDER, linewidth=0.4))
+                    ax.text(0.03, y - row_h/2 + 0.003, label,
+                        ha="left", va="center", fontsize=10, color=MUTED)
+                    ax.text(0.97, y - row_h/2 + 0.003, value,
+                        ha="right", va="center", fontsize=10,
+                        fontweight="bold", color=WHITE)
 
-                # Customer profile table (2 columns side by side)
-                block.append(Paragraph("Customer Profile", sSection))
-                profile_left = [
-                    ["Geography",      str(rec.get("Geography","—"))],
-                    ["Gender",         str(rec.get("Gender","—"))],
-                    ["Age",            f"{rec.get('Age','—')} years"],
-                    ["Credit Score",   str(rec.get("CreditScore","—"))],
-                    ["Tenure",         f"{rec.get('Tenure','—')} years"],
-                ]
-                profile_right = [
-                    ["Account Balance",   f"${float(rec.get('Balance',0)):,.0f}"],
-                    ["No. of Products",   str(rec.get("NumOfProducts","—"))],
-                    ["Estimated Salary",  f"${float(rec.get('EstimatedSalary',0)):,.0f}"],
-                    ["Has Credit Card",   "Yes" if rec.get("HasCrCard") == 1 else "No"],
-                    ["Active Member",     "Yes" if rec.get("IsActiveMember") == 1 else "No"],
-                ]
-                combined = [l + r for l, r in zip(profile_left, profile_right)]
-                half = content_width / 2
-                q    = half / 2
-                prof_tbl = Table(combined, colWidths=[q, q, q, q])
-                prof_tbl.setStyle(TableStyle([
-                    ("BACKGROUND",  (0,0), (0,-1), CARD),
-                    ("BACKGROUND",  (2,0), (2,-1), CARD),
-                    ("BACKGROUND",  (1,0), (1,-1), HexColor("#0d1e3d")),
-                    ("BACKGROUND",  (3,0), (3,-1), HexColor("#0d1e3d")),
-                    ("TEXTCOLOR",   (0,0), (0,-1), MUTED),
-                    ("TEXTCOLOR",   (2,0), (2,-1), MUTED),
-                    ("TEXTCOLOR",   (1,0), (1,-1), WHITE),
-                    ("TEXTCOLOR",   (3,0), (3,-1), WHITE),
-                    ("FONTNAME",    (0,0), (-1,-1), "Helvetica"),
-                    ("FONTNAME",    (1,0), (1,-1), "Helvetica-Bold"),
-                    ("FONTNAME",    (3,0), (3,-1), "Helvetica-Bold"),
-                    ("FONTSIZE",    (0,0), (-1,-1), 9),
-                    ("TOPPADDING",  (0,0), (-1,-1), 6),
-                    ("BOTTOMPADDING",(0,0),(-1,-1), 6),
-                    ("LEFTPADDING", (0,0), (-1,-1), 8),
-                    ("GRID",        (0,0), (-1,-1), 0.5, BORDER),
-                ]))
-                block.append(prof_tbl)
-                block.append(Spacer(1, 0.2*cm))
-                block.append(HRFlowable(width="100%", thickness=0.5,
-                                        color=BORDER, spaceAfter=4))
+                # Summary bar chart (churn vs retain)
+                churn_n  = sum(1 for r in log_records if r.get("Verdict")=="CHURN")
+                retain_n = len(log_records) - churn_n
+                chart_y  = start_y - len(meta_rows) * row_h - 0.04
+                ax_bar = fig.add_axes([0.12, 0.06 + chart_y * 0.89, 0.76, 0.14])
+                ax_bar.set_facecolor(CARD)
+                for spine in ax_bar.spines.values():
+                    spine.set_edgecolor(BORDER); spine.set_linewidth(0.5)
+                bars = ax_bar.bar(["Churn", "Retain"], [churn_n, retain_n],
+                    color=[RED, GREEN], width=0.45, edgecolor=BORDER, linewidth=0.5)
+                for bar, val in zip(bars, [churn_n, retain_n]):
+                    ax_bar.text(bar.get_x() + bar.get_width()/2,
+                        bar.get_height() + 0.05, str(val),
+                        ha="center", va="bottom", fontsize=11,
+                        fontweight="bold", color=WHITE)
+                ax_bar.set_facecolor(CARD)
+                ax_bar.tick_params(colors=MUTED, labelsize=9)
+                ax_bar.set_ylabel("Customers", color=MUTED, fontsize=9)
+                ax_bar.yaxis.label.set_color(MUTED)
+                ax_bar.title.set_color(GOLD2)
+                ax_bar.set_title("Prediction Summary", color=GOLD2,
+                    fontsize=11, fontweight="bold", pad=6)
+                ax_bar.set_facecolor(CARD)
+                fig.patch.set_facecolor(NAVY)
 
-                story.append(KeepTogether(block[:6]))  # header + verdict + chart
-                for item in block[6:]:
-                    story.append(item)
+                pdf.savefig(fig, facecolor=NAVY)
+                plt.close(fig)
 
-                if idx < len(log_records):
-                    story.append(PageBreak())
+                # ════════════════════════════════════════════════════════════
+                # ONE PAGE PER CUSTOMER
+                # ════════════════════════════════════════════════════════════
+                for idx, rec in enumerate(log_records, 1):
+                    prob       = float(rec.get("Churn Probability", 0)) / 100.0
+                    verdict    = rec.get("Verdict", "UNKNOWN")
+                    will_churn = verdict == "CHURN"
+                    v_col      = RED   if will_churn else GREEN
+                    v_bg       = "#2a0808" if will_churn else "#062d16"
+                    risk_label = "HIGH RISK"   if prob >= 0.6  else ("MEDIUM RISK" if prob >= 0.35 else "LOW RISK")
+                    risk_col   = RED   if prob >= 0.6  else (AMBER if prob >= 0.35 else GREEN)
 
-            # ── Footer note ───────────────────────────────────────────────────
-            story.append(Spacer(1, 0.8*cm))
-            story.append(HRFlowable(width="100%", thickness=1,
-                                    color=GOLD, spaceAfter=8))
-            story.append(Paragraph(
-                "This report is generated by the Customer Churn Prediction System. "
-                "All predictions are model-based estimates and should be reviewed by "
-                "an authorised bank analyst before acting on them.",
-                sFooter))
+                    fig = styled_fig()
+                    header_bar(fig, idx + 1, total_pages)
 
-            doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
+                    ax = fig.add_axes([0.08, 0.04, 0.84, 0.91])
+                    ax.set_facecolor(NAVY)
+                    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+                    ax.axis("off")
+
+                    y = 0.97  # cursor from top
+
+                    # ── Customer heading ──────────────────────────────────
+                    ax.text(0, y, f"Customer #{idx}",
+                        ha="left", va="top", fontsize=15,
+                        fontweight="bold", color=GOLD2)
+                    ax.text(1, y, f"Predicted by: {rec.get('user','N/A')}   |   {rec.get('timestamp','N/A')}",
+                        ha="right", va="top", fontsize=8, color=MUTED)
+                    y -= 0.03
+                    ax.add_patch(patches.Rectangle((0, y), 1, 0.003,
+                        facecolor=GOLD, edgecolor="none"))
+                    y -= 0.02
+
+                    # ── Verdict banner ────────────────────────────────────
+                    v_text = "WILL CHURN" if will_churn else "WILL NOT CHURN"
+                    v_icon = "✖" if will_churn else "✔"
+                    ax.add_patch(patches.FancyBboxPatch(
+                        (0, y - 0.065), 1, 0.065,
+                        boxstyle="round,pad=0.005",
+                        facecolor=v_bg, edgecolor=v_col, linewidth=1.5))
+                    ax.text(0.5, y - 0.033,
+                        f"{v_icon}  {v_text}",
+                        ha="center", va="center", fontsize=16,
+                        fontweight="bold", color=v_col)
+                    y -= 0.08
+
+                    # ── Probability bar ───────────────────────────────────
+                    bar_h = 0.048
+                    # background track
+                    ax.add_patch(patches.FancyBboxPatch(
+                        (0, y - bar_h), 1, bar_h,
+                        boxstyle="round,pad=0.002",
+                        facecolor="#1a3560", edgecolor=BORDER, linewidth=0.5))
+                    # filled bar
+                    ax.add_patch(patches.FancyBboxPatch(
+                        (0, y - bar_h), max(prob, 0.005), bar_h,
+                        boxstyle="round,pad=0.002",
+                        facecolor=v_col, edgecolor="none", alpha=0.9))
+                    # threshold line
+                    ax.plot([0.5, 0.5], [y - bar_h - 0.005, y + 0.005],
+                        color=GOLD2, linewidth=1.5, linestyle="--", alpha=0.9)
+                    ax.text(0.5, y + 0.008, "50% threshold",
+                        ha="center", va="bottom", fontsize=7, color=GOLD2)
+                    # prob label inside/outside bar
+                    lx = min(prob + 0.02, 0.95) if prob < 0.85 else prob - 0.02
+                    ax.text(lx, y - bar_h/2, f"{prob*100:.1f}%",
+                        ha="left" if prob < 0.85 else "right",
+                        va="center", fontsize=10, fontweight="bold", color=WHITE)
+                    # x-axis ticks
+                    for tick in [0, 0.25, 0.5, 0.75, 1.0]:
+                        ax.text(tick, y - bar_h - 0.012, f"{int(tick*100)}%",
+                            ha="center", va="top", fontsize=7, color=MUTED)
+                    y -= bar_h + 0.045
+
+                    # ── Summary metrics row ───────────────────────────────
+                    metrics_items = [
+                        ("Churn Probability", f"{prob*100:.1f}%", v_col),
+                        ("Verdict",           verdict,            v_col),
+                        ("Risk Level",        risk_label,         risk_col),
+                    ]
+                    box_w = 0.31; gap = 0.035; box_h = 0.075
+                    for mi, (label, value, color) in enumerate(metrics_items):
+                        bx = mi * (box_w + gap)
+                        ax.add_patch(patches.FancyBboxPatch(
+                            (bx, y - box_h), box_w, box_h,
+                            boxstyle="round,pad=0.005",
+                            facecolor=CARD, edgecolor=BORDER, linewidth=0.5))
+                        ax.text(bx + box_w/2, y - 0.018, label,
+                            ha="center", va="top", fontsize=7.5, color=MUTED)
+                        ax.text(bx + box_w/2, y - box_h/2 - 0.008, value,
+                            ha="center", va="center", fontsize=13,
+                            fontweight="bold", color=color)
+                    y -= box_h + 0.03
+
+                    # ── Gold divider ──────────────────────────────────────
+                    ax.add_patch(patches.Rectangle((0, y), 1, 0.002,
+                        facecolor=BORDER, edgecolor="none"))
+                    y -= 0.025
+
+                    # ── Customer Profile ──────────────────────────────────
+                    ax.text(0, y, "Customer Profile",
+                        ha="left", va="top", fontsize=11,
+                        fontweight="bold", color=GOLD)
+                    y -= 0.028
+
+                    profile = [
+                        ("Geography",       str(rec.get("Geography","—"))),
+                        ("Gender",          str(rec.get("Gender","—"))),
+                        ("Age",             f"{rec.get('Age','—')} years"),
+                        ("Credit Score",    str(rec.get("CreditScore","—"))),
+                        ("Tenure",          f"{rec.get('Tenure','—')} years"),
+                        ("Account Balance", f"${float(rec.get('Balance',0)):,.0f}"),
+                        ("No. of Products", str(rec.get("NumOfProducts","—"))),
+                        ("Estimated Salary",f"${float(rec.get('EstimatedSalary',0)):,.0f}"),
+                        ("Has Credit Card", "Yes" if rec.get("HasCrCard")==1 else "No"),
+                        ("Active Member",   "Yes" if rec.get("IsActiveMember")==1 else "No"),
+                    ]
+
+                    row_h = 0.052
+                    col2x = 0.52
+                    for ri, (label, value) in enumerate(profile):
+                        col = ri % 2       # 0=left, 1=right
+                        row = ri // 2
+                        rx  = 0 if col == 0 else col2x
+                        ry  = y - row * row_h
+                        bg  = CARD if (ri // 2) % 2 == 0 else CARD2
+                        ax.add_patch(patches.Rectangle(
+                            (rx, ry - row_h + 0.003), col2x - 0.01, row_h - 0.003,
+                            facecolor=bg, edgecolor=BORDER, linewidth=0.3))
+                        ax.text(rx + 0.015, ry - row_h/2 + 0.001, label,
+                            ha="left", va="center", fontsize=8.5, color=MUTED)
+                        ax.text(rx + col2x - 0.02, ry - row_h/2 + 0.001, value,
+                            ha="right", va="center", fontsize=8.5,
+                            fontweight="bold", color=WHITE)
+
+                    rows_used = (len(profile) + 1) // 2
+                    y -= rows_used * row_h + 0.02
+
+                    # ── Disclaimer ────────────────────────────────────────
+                    ax.add_patch(patches.Rectangle((0, y - 0.03), 1, 0.002,
+                        facecolor=BORDER, edgecolor="none"))
+                    ax.text(0.5, y - 0.045,
+                        "This prediction is model-based and should be reviewed by an authorised bank analyst.",
+                        ha="center", va="top", fontsize=7, color=MUTED, style="italic")
+
+                    pdf.savefig(fig, facecolor=NAVY)
+                    plt.close(fig)
+
             buf.seek(0)
             return buf.read()
 
