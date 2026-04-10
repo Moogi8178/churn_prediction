@@ -1193,81 +1193,143 @@ elif st.session_state["page"] == "input":
     st.markdown("""
     <div class="page-header">
       <h1>Customer Churn</h1>
-      <p>Fill in the customer profile below and run the churn prediction model</p>
+      <p>Fill in all fields in the customer profile below, then run the churn prediction model</p>
     </div>
     """, unsafe_allow_html=True)
 
     if not ready:
         st.stop()
 
-    # Demographics
+    # ── Demographics ──────────────────────────────────────────────────────────
     st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">👤 Demographics</div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
-    with c1: geography = st.selectbox("Geography", ["France","Germany","Spain"])
-    with c2: gender    = st.selectbox("Gender", ["Female","Male"])
-    with c3: age       = st.number_input("Age", min_value=18, max_value=92, value=42, step=1)
+    with c1:
+        geography = st.selectbox("Geography", ["— select —", "France", "Germany", "Spain"])
+    with c2:
+        gender = st.selectbox("Gender", ["— select —", "Female", "Male"])
+    with c3:
+        age = st.number_input(
+            "Age (18 – 92)",
+            min_value=0, max_value=92,
+            value=None, step=1,
+            placeholder="e.g. 42",
+        )
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Account details
+    # ── Account Details ───────────────────────────────────────────────────────
     st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🏦 Account Details</div>', unsafe_allow_html=True)
     c4, c5, c6 = st.columns(3)
-    with c4: credit_score = st.number_input("Credit Score", min_value=300, max_value=850, value=620, step=1)
-    with c5: tenure       = st.slider("Tenure (years)", 0, 10, 3)
-    with c6: num_products = st.selectbox("Number of Products", [1,2,3,4])
+    with c4:
+        credit_score = st.number_input(
+            "Credit Score (300 – 850)",
+            min_value=0, max_value=850,
+            value=None, step=1,
+            placeholder="e.g. 650",
+        )
+    with c5:
+        tenure = st.number_input(
+            "Tenure (years, 0 – 10)",
+            min_value=0, max_value=10,
+            value=None, step=1,
+            placeholder="e.g. 3",
+        )
+    with c6:
+        num_products = st.selectbox("Number of Products", ["— select —", 1, 2, 3, 4])
     c7, c8 = st.columns(2)
-    with c7: balance       = st.number_input("Account Balance ($)", 0.0, 300000.0, 130000.0, step=1000.0)
-    with c8: estimated_sal = st.number_input("Estimated Salary ($)", 0.0, 250000.0, 82000.0, step=1000.0)
+    with c7:
+        balance = st.number_input(
+            "Account Balance ($)",
+            min_value=0.0, max_value=300_000.0,
+            value=None, step=500.0,
+            placeholder="e.g. 125000.00",
+        )
+    with c8:
+        estimated_sal = st.number_input(
+            "Estimated Salary ($)",
+            min_value=0.0, max_value=250_000.0,
+            value=None, step=500.0,
+            placeholder="e.g. 80000.00",
+        )
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Engagement
+    # ── Engagement ────────────────────────────────────────────────────────────
     st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">📲 Engagement</div>', unsafe_allow_html=True)
     c9, c10 = st.columns(2)
-    with c9:  has_cr_card = st.radio("Has Credit Card?", ["Yes","No"], horizontal=True)
-    with c10: is_active   = st.radio("Is Active Member?", ["Yes","No"], horizontal=True)
+    with c9:
+        has_cr_card = st.radio("Has Credit Card?", ["— select —", "Yes", "No"], horizontal=True)
+    with c10:
+        is_active = st.radio("Is Active Member?", ["— select —", "Yes", "No"], horizontal=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Predict button
+    # ── Validation ────────────────────────────────────────────────────────────
+    missing = []
+    if geography == "— select —":    missing.append("Geography")
+    if gender    == "— select —":    missing.append("Gender")
+    if age       is None:            missing.append("Age")
+    if credit_score is None:         missing.append("Credit Score")
+    if tenure    is None:            missing.append("Tenure")
+    if num_products == "— select —": missing.append("Number of Products")
+    if balance   is None:            missing.append("Account Balance")
+    if estimated_sal is None:        missing.append("Estimated Salary")
+    if has_cr_card == "— select —":  missing.append("Has Credit Card")
+    if is_active  == "— select —":   missing.append("Is Active Member")
+    if credit_score is not None and credit_score < 300:
+        missing.append("Credit Score must be at least 300")
+
+    if missing:
+        st.markdown(
+            f'<div class="alert-error">⚠️ Please complete the following fields before predicting: '
+            f'<strong>{", ".join(missing)}</strong></div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── Predict button ────────────────────────────────────────────────────────
     st.markdown('<div class="predict-btn">', unsafe_allow_html=True)
-    if st.button("🔍  Predict Customer Churn", use_container_width=True):
+    predict_clicked = st.button(
+        "🔍  Predict Customer Churn",
+        use_container_width=True,
+        disabled=bool(missing),
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if predict_clicked and not missing:
         import datetime
         customer_data = {
-            "CreditScore":     credit_score,
+            "CreditScore":     int(credit_score),
             "Geography":       geography,
             "Gender":          gender,
-            "Age":             age,
-            "Tenure":          tenure,
-            "Balance":         balance,
-            "NumOfProducts":   num_products,
+            "Age":             int(age),
+            "Tenure":          int(tenure),
+            "Balance":         float(balance),
+            "NumOfProducts":   int(num_products),
             "HasCrCard":       1 if has_cr_card == "Yes" else 0,
             "IsActiveMember":  1 if is_active   == "Yes" else 0,
-            "EstimatedSalary": estimated_sal,
+            "EstimatedSalary": float(estimated_sal),
         }
         st.session_state["customer"] = customer_data
-        # Log this prediction
         if ready:
             _prob, _churn = run_predict(customer_data)
             st.session_state["prediction_log"].append({
-                "user":      st.session_state["current_user"],
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "Geography": geography,
-                "Gender":    gender,
-                "Age":       age,
-                "CreditScore": credit_score,
-                "Tenure":    tenure,
-                "Balance":   balance,
-                "NumOfProducts": num_products,
-                "HasCrCard": 1 if has_cr_card == "Yes" else 0,
-                "IsActiveMember": 1 if is_active == "Yes" else 0,
-                "EstimatedSalary": estimated_sal,
+                "user":            st.session_state["current_user"],
+                "timestamp":       datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Geography":       geography,
+                "Gender":          gender,
+                "Age":             int(age),
+                "CreditScore":     int(credit_score),
+                "Tenure":          int(tenure),
+                "Balance":         float(balance),
+                "NumOfProducts":   int(num_products),
+                "HasCrCard":       1 if has_cr_card == "Yes" else 0,
+                "IsActiveMember":  1 if is_active   == "Yes" else 0,
+                "EstimatedSalary": float(estimated_sal),
                 "Churn Probability": round(_prob * 100, 2),
-                "Verdict":   "CHURN" if _churn else "RETAIN",
+                "Verdict":         "CHURN" if _churn else "RETAIN",
             })
         st.session_state["page"] = "results"
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
