@@ -27,25 +27,60 @@ st.set_page_config(
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# USER STORE  (in-memory; replace with a DB for production)
+# USER STORE — persisted to users.json so passwords survive restarts
 # ══════════════════════════════════════════════════════════════════════════════
+import json, os
+
+USERS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.json")
+
 def _hash(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
+_DEFAULT_USERS = {
+    "admin": {
+        "password_hash": _hash("admin123"),
+        "role": "admin",
+        "name": "Administrator",
+    },
+    "analyst": {
+        "password_hash": _hash("analyst123"),
+        "role": "user",
+        "name": "Bank Analyst",
+    },
+}
+
+def _save_users(users: dict) -> None:
+    try:
+        with open(USERS_FILE, "w") as f:
+            json.dump(users, f, indent=2)
+    except Exception:
+        pass
+
+def _load_users() -> dict:
+    try:
+        if os.path.exists(USERS_FILE):
+            with open(USERS_FILE, "r") as f:
+                data = json.load(f)
+            changed = False
+            for uname, udata in _DEFAULT_USERS.items():
+                if uname not in data:
+                    data[uname] = udata
+                    changed = True
+            if changed:
+                _save_users(data)
+            return data
+    except Exception:
+        pass
+    _save_users(_DEFAULT_USERS)
+    return dict(_DEFAULT_USERS)
+
 if "users" not in st.session_state:
-    # Pre-seeded accounts: username → {password_hash, role, name}
-    st.session_state["users"] = {
-        "admin": {
-            "password_hash": _hash("admin123"),
-            "role": "admin",
-            "name": "Administrator",
-        },
-        "analyst": {
-            "password_hash": _hash("analyst123"),
-            "role": "user",
-            "name": "Bank Analyst",
-        },
-    }
+    st.session_state["users"] = _load_users()
+
+# Always guarantee default accounts exist in session state
+for _uname, _udata in _DEFAULT_USERS.items():
+    if _uname not in st.session_state["users"]:
+        st.session_state["users"][_uname] = _udata
 
 # ── Initialise navigation & auth state ───────────────────────────────────────
 for key, default in [
@@ -872,26 +907,28 @@ if st.session_state["page"] == "login":
 
         if st.session_state.get("auth_error"):
             st.markdown(f'<div class="alert-error">⚠️ {st.session_state["auth_error"]}</div>', unsafe_allow_html=True)
-            st.session_state["auth_error"] = ""
 
-        # Use return values directly — never rely on session_state keys for
-        # password inputs because Streamlit does not update them reliably on rerun.
         saved_user = st.session_state.get("saved_username", "")
         saved_pw   = st.session_state.get("saved_password", "")
         saved_rem  = st.session_state.get("remember_me", False)
 
         username = st.text_input("Username", value=saved_user, placeholder="Enter username")
-        password = st.text_input("Password", value=saved_pw,   type="password", placeholder="Enter password")
+        password = st.text_input("Password", value=saved_pw, type="password", placeholder="Enter password")
         remember = st.checkbox("🔐 Remember my password", value=saved_rem)
 
         st.markdown('<div class="primary-btn" style="margin-top:1.2rem;">', unsafe_allow_html=True)
         if st.button("Sign In →", use_container_width=True, key="do_login"):
+            # Always reload from file so we never miss newly registered accounts
+            st.session_state["users"] = _load_users()
             users = st.session_state["users"]
-            entered_user = username.strip()
-            entered_pw   = password
-            if entered_user in users and users[entered_user]["password_hash"] == _hash(entered_pw):
+            entered_user = username.strip().lower()
+            entered_pw   = password.strip()
+            # Case-insensitive username match
+            matched = next((u for u in users if u.lower() == entered_user), None)
+            if matched and users[matched]["password_hash"] == _hash(entered_pw):
+                st.session_state["auth_error"] = ""
                 if remember:
-                    st.session_state["saved_username"] = entered_user
+                    st.session_state["saved_username"] = matched
                     st.session_state["saved_password"] = entered_pw
                     st.session_state["remember_me"]    = True
                 else:
@@ -899,12 +936,12 @@ if st.session_state["page"] == "login":
                     st.session_state["saved_password"] = ""
                     st.session_state["remember_me"]    = False
                 st.session_state["logged_in"]    = True
-                st.session_state["current_user"] = entered_user
-                st.session_state["current_role"] = users[entered_user]["role"]
-                st.session_state["page"]         = "admin" if users[entered_user]["role"] == "admin" else "input"
+                st.session_state["current_user"] = matched
+                st.session_state["current_role"] = users[matched]["role"]
+                st.session_state["page"]         = "admin" if users[matched]["role"] == "admin" else "input"
                 st.rerun()
             else:
-                st.session_state["auth_error"] = "Invalid username or password."
+                st.session_state["auth_error"] = "Invalid username or password. Check your credentials and try again."
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -969,6 +1006,8 @@ elif st.session_state["page"] == "register":
                     "role": "user",
                     "name": full_name,
                 }
+                _save_users(st.session_state["users"])  # persist to disk
+                st.session_state["auth_error"] = ""
                 st.session_state["reg_success"] = True
                 st.session_state["page"] = "login"
                 st.rerun()
