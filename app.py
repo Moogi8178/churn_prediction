@@ -1201,7 +1201,6 @@ elif st.session_state["page"] == "input":
         st.stop()
 
     # ── Demographics ──────────────────────────────────────────────────────────
-    st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">👤 Demographics</div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -1210,27 +1209,26 @@ elif st.session_state["page"] == "input":
         gender = st.selectbox("Gender", ["— select —", "Female", "Male"])
     with c3:
         age = st.number_input(
-            "Age (18 – 92)",
+            "Age (18 - 92)",
             min_value=0, max_value=92,
             value=None, step=1,
             placeholder="e.g. 42",
         )
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#1e3a5a;margin:1.2rem 0;'>", unsafe_allow_html=True)
 
     # ── Account Details ───────────────────────────────────────────────────────
-    st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🏦 Account Details</div>', unsafe_allow_html=True)
     c4, c5, c6 = st.columns(3)
     with c4:
         credit_score = st.number_input(
-            "Credit Score (300 – 850)",
+            "Credit Score (300 - 850)",
             min_value=0, max_value=850,
             value=None, step=1,
             placeholder="e.g. 650",
         )
     with c5:
         tenure = st.number_input(
-            "Tenure (years, 0 – 10)",
+            "Tenure (years, 0 - 10)",
             min_value=0, max_value=10,
             value=None, step=1,
             placeholder="e.g. 3",
@@ -1252,17 +1250,16 @@ elif st.session_state["page"] == "input":
             value=None, step=500.0,
             placeholder="e.g. 80000.00",
         )
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#1e3a5a;margin:1.2rem 0;'>", unsafe_allow_html=True)
 
     # ── Engagement ────────────────────────────────────────────────────────────
-    st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">📲 Engagement</div>', unsafe_allow_html=True)
     c9, c10 = st.columns(2)
     with c9:
         has_cr_card = st.radio("Has Credit Card?", ["— select —", "Yes", "No"], horizontal=True)
     with c10:
         is_active = st.radio("Is Active Member?", ["— select —", "Yes", "No"], horizontal=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<hr style='border-color:#1e3a5a;margin:1.2rem 0;'>", unsafe_allow_html=True)
 
     # ── Validation ────────────────────────────────────────────────────────────
     missing = []
