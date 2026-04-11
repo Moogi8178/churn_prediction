@@ -1,6 +1,7 @@
 """
 Customer Churn Prediction
 Single-file multipage app with Login, Registration, Admin, Input, and Results pages.
+Persistent storage via Supabase (PostgreSQL).
 """
 
 import streamlit as st
@@ -27,78 +28,103 @@ st.set_page_config(
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# USER STORE — persisted to users.json so passwords survive restarts
+# SUPABASE CLIENT
 # ══════════════════════════════════════════════════════════════════════════════
-import json, os
+from supabase import create_client, Client
 
-USERS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.json")
+@st.cache_resource
+def get_supabase() -> Client:
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
+
+supabase_client = get_supabase()
 
 def _hash(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
-_DEFAULT_USERS = {
-    "admin": {
-        "password_hash": _hash("admin123"),
-        "role": "admin",
-        "name": "Administrator",
-    },
-    "analyst": {
-        "password_hash": _hash("analyst123"),
-        "role": "user",
-        "name": "Bank Analyst",
-    },
-}
-
-def _save_users(users: dict) -> None:
+# ── User helpers ───────────────────────────────────────────────────────────────
+def db_get_user(username: str):
+    """Return user dict or None."""
     try:
-        with open(USERS_FILE, "w") as f:
-            json.dump(users, f, indent=2)
+        res = supabase_client.table("users").select("*").eq("username", username.strip().lower()).execute()
+        return res.data[0] if res.data else None
     except Exception:
-        pass
+        return None
 
-def _load_users() -> dict:
+def db_get_all_users():
+    """Return list of all user dicts."""
     try:
-        if os.path.exists(USERS_FILE):
-            with open(USERS_FILE, "r") as f:
-                data = json.load(f)
-            changed = False
-            for uname, udata in _DEFAULT_USERS.items():
-                if uname not in data:
-                    data[uname] = udata
-                    changed = True
-            if changed:
-                _save_users(data)
-            return data
+        res = supabase_client.table("users").select("*").order("created_at").execute()
+        return res.data or []
     except Exception:
-        pass
-    _save_users(_DEFAULT_USERS)
-    return dict(_DEFAULT_USERS)
+        return []
 
-if "users" not in st.session_state:
-    st.session_state["users"] = _load_users()
+def db_create_user(username: str, password: str, name: str, role: str = "user"):
+    try:
+        supabase_client.table("users").insert({
+            "username":      username.strip().lower(),
+            "password_hash": _hash(password),
+            "name":          name,
+            "role":          role,
+        }).execute()
+        return True
+    except Exception:
+        return False
 
-# Always guarantee default accounts exist in session state
-for _uname, _udata in _DEFAULT_USERS.items():
-    if _uname not in st.session_state["users"]:
-        st.session_state["users"][_uname] = _udata
+def db_delete_user(username: str):
+    try:
+        supabase_client.table("users").delete().eq("username", username).execute()
+        return True
+    except Exception:
+        return False
 
-# ── Initialise navigation & auth state ───────────────────────────────────────
+# ── Prediction log helpers ─────────────────────────────────────────────────────
+def db_log_prediction(record: dict):
+    try:
+        supabase_client.table("prediction_log").insert(record).execute()
+        return True
+    except Exception:
+        return False
+
+def db_get_prediction_log():
+    try:
+        res = supabase_client.table("prediction_log").select("*").order("ts", desc=True).execute()
+        rows = res.data or []
+        # Normalise column names so the rest of the UI code (which uses CamelCase keys) works unchanged
+        for r in rows:
+            r.setdefault("timestamp",         r.get("ts", ""))
+            r.setdefault("user",              r.get("username", ""))
+            r.setdefault("Geography",         r.get("geography", ""))
+            r.setdefault("Gender",            r.get("gender", ""))
+            r.setdefault("Age",               r.get("age", ""))
+            r.setdefault("CreditScore",       r.get("credit_score", ""))
+            r.setdefault("Tenure",            r.get("tenure", ""))
+            r.setdefault("Balance",           r.get("balance", 0))
+            r.setdefault("NumOfProducts",     r.get("num_products", ""))
+            r.setdefault("EstimatedSalary",   r.get("estimated_salary", 0))
+            r.setdefault("Churn Probability", r.get("churn_probability", 0))
+            r.setdefault("Verdict",           r.get("verdict", ""))
+        return rows
+    except Exception:
+        return []
+
+# ── Initialise navigation & auth state ────────────────────────────────────────
 for key, default in [
-    ("page", "login"),          # login | register | admin | input | results
-    ("logged_in", False),
-    ("current_user", None),
-    ("current_role", None),
-    ("auth_error", ""),
-    ("reg_success", False),
-    ("prediction_log", []),     # list of dicts: {user, timestamp, customer, prob, verdict}
-    ("saved_username", ""),     # remember-me: saved username
-    ("saved_password", ""),     # remember-me: saved password
-    ("remember_me", False),     # remember-me checkbox state
+    ("page",           "login"),
+    ("logged_in",      False),
+    ("current_user",   None),
+    ("current_role",   None),
+    ("auth_error",     ""),
+    ("reg_success",    False),
+    ("saved_username", ""),
+    ("saved_password", ""),
+    ("remember_me",    False),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
 
-# ── CSS ───────────────────────────────────────────────────────────────────────
+# ── CSS ────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap');
@@ -130,104 +156,23 @@ div[data-testid="stHorizontalBlock"] {
     font-family: 'DM Sans', sans-serif !important;
 }
 
-/* ══════════════════════════════════════════════════
-   PER-PAGE BACKGROUND IMAGES  (bank / finance theme)
-   Each page gets a unique Unsplash photo with a dark
-   navy overlay so all text remains readable.
-   ══════════════════════════════════════════════════ */
-
-/* LOGIN page — grand bank building exterior */
-[data-page="login"] .stApp,
-.stApp[data-page="login"] {
-    background-image:
-        linear-gradient(135deg, rgba(11,29,58,0.88) 0%, rgba(17,34,68,0.82) 100%),
-        url('https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=1920&q=80') !important;
-    background-size: cover !important;
-    background-position: center !important;
-    background-attachment: fixed !important;
-}
-
-/* REGISTER page — modern bank interior lobby */
-[data-page="register"] .stApp,
-.stApp[data-page="register"] {
-    background-image:
-        linear-gradient(135deg, rgba(11,29,58,0.88) 0%, rgba(17,34,68,0.82) 100%),
-        url('https://images.unsplash.com/photo-1501167786227-4cba60f6d58f?w=1920&q=80') !important;
-    background-size: cover !important;
-    background-position: center !important;
-    background-attachment: fixed !important;
-}
-
-/* INPUT / PREDICT page — financial data / analytics desk */
-[data-page="input"] .stApp,
-.stApp[data-page="input"] {
-    background-image:
-        linear-gradient(135deg, rgba(11,29,58,0.90) 0%, rgba(17,34,68,0.85) 100%),
-        url('https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=1920&q=80') !important;
-    background-size: cover !important;
-    background-position: center !important;
-    background-attachment: fixed !important;
-}
-
-/* RESULTS page — customer meeting / financial review */
-[data-page="results"] .stApp,
-.stApp[data-page="results"] {
-    background-image:
-        linear-gradient(135deg, rgba(11,29,58,0.90) 0%, rgba(17,34,68,0.85) 100%),
-        url('https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1920&q=80') !important;
-    background-size: cover !important;
-    background-position: center !important;
-    background-attachment: fixed !important;
-}
-
-/* ADMIN page — executive dashboard / control room */
-[data-page="admin"] .stApp,
-.stApp[data-page="admin"] {
-    background-image:
-        linear-gradient(135deg, rgba(11,29,58,0.92) 0%, rgba(17,34,68,0.88) 100%),
-        url('https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1920&q=80') !important;
-    background-size: cover !important;
-    background-position: center !important;
-    background-attachment: fixed !important;
-}
-
-/* Universal fallback background (covers all inner containers) */
-[data-testid="stAppViewContainer"],
-[data-testid="stAppViewBlockContainer"] {
-    background: transparent !important;
-}
-[data-testid="block-container"],
-.main {
-    background: transparent !important;
-}
-div[data-testid="stVerticalBlock"],
-div[data-testid="stHorizontalBlock"] {
-    background: transparent !important;
-}
-
-/* ── BUTTON TEXT FIX: stop white bleeding into button labels ── */
-/* Streamlit wraps button text in <p> tags; target them directly */
+/* ── BUTTON TEXT FIX ── */
 div.stButton > button { color: #FFE08A !important; }
 div.stButton > button p { color: inherit !important; }
 div.stButton > button:hover { opacity: 0.9; }
-
-/* Specific overrides per button class */
 .predict-btn div.stButton > button,
 .predict-btn div.stButton > button p { color: #0B1D3A !important; }
-
 .primary-btn div.stButton > button,
 .primary-btn div.stButton > button p { color: #0B1D3A !important; }
-
 .sec-btn div.stButton > button,
 .sec-btn div.stButton > button p,
 .back-btn div.stButton > button,
 .back-btn div.stButton > button p { color: #FFE08A !important; }
-
 .danger-btn div.stButton > button,
 .danger-btn div.stButton > button p { color: #FF5555 !important; }
-
 div.stDownloadButton > button { color: #0B1D3A !important; }
 div.stDownloadButton > button p { color: #0B1D3A !important; }
+
 .main .block-container {
     padding-top: 2rem;
     padding-bottom: 3rem;
@@ -303,7 +248,7 @@ div.stDownloadButton > button p { color: #0B1D3A !important; }
     margin-bottom: 1.4rem;
 }
 
-/* ── Text Inputs (login/register) ── */
+/* ── Text Inputs ── */
 [data-testid="stTextInput"] input {
     background-color: #1a3560 !important;
     color: #FFFFFF !important;
@@ -317,7 +262,7 @@ div.stDownloadButton > button p { color: #0B1D3A !important; }
     box-shadow: 0 0 0 2px rgba(255,224,138,0.15) !important;
 }
 
-/* ── ALL text labels force white ── */
+/* ── Labels ── */
 label,
 .stSlider label,
 .stSelectbox label,
@@ -333,14 +278,12 @@ p {
     font-size: 1rem !important;
     font-weight: 600 !important;
 }
-
 [data-testid="stSlider"] span,
 [data-testid="stSlider"] p {
     color: #FFE08A !important;
     font-weight: 700 !important;
     font-size: 1rem !important;
 }
-
 div[data-baseweb="select"] > div {
     background-color: #1a3560 !important;
     border: 1.5px solid #3A5A8A !important;
@@ -351,7 +294,6 @@ div[data-baseweb="select"] div {
     font-weight: 600 !important;
     font-size: 1rem !important;
 }
-
 [data-testid="stNumberInput"] input {
     background-color: #1a3560 !important;
     color: #FFFFFF !important;
@@ -364,7 +306,6 @@ div[data-baseweb="select"] div {
     color: #FFFFFF !important;
     border-color: #3A5A8A !important;
 }
-
 [data-testid="stRadio"] label span { color: #FFFFFF !important; font-weight: 600 !important; font-size: 1rem !important; }
 [data-testid="stRadio"] > label    { color: #FFFFFF !important; font-weight: 700 !important; font-size: 1rem !important; }
 
@@ -571,7 +512,7 @@ div[data-baseweb="select"] div {
 .predict-btn div.stButton > button p,
 .predict-btn div.stButton > button span { color: #0B1D3A !important; font-weight: 800 !important; }
 
-/* ── Primary button (login/register) ── */
+/* ── Primary button ── */
 .primary-btn div.stButton > button {
     background: linear-gradient(135deg,#C9A84C,#FFE08A) !important;
     color: #0B1D3A !important;
@@ -616,12 +557,8 @@ div[data-baseweb="select"] div {
 .danger-btn div.stButton > button p,
 .danger-btn div.stButton > button span { color: #FF5555 !important; font-weight: 700 !important; }
 
-/* ── Global fallback: all Streamlit buttons show text ── */
 .stButton > button p,
-.stButton > button span {
-    color: inherit !important;
-    font-weight: inherit !important;
-}
+.stButton > button span { color: inherit !important; font-weight: inherit !important; }
 
 strong { color: #FFE08A !important; }
 hr { border-color: #3A5A8A !important; }
@@ -632,15 +569,9 @@ hr { border-color: #3A5A8A !important; }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# HELPER — inject page name into DOM so per-page CSS backgrounds can fire
+# HELPER — background image per page
 # ══════════════════════════════════════════════════════════════════════════════
 def set_page_bg(page_name: str):
-    """
-    Injects a <script> that sets data-page="<page_name>" on .stApp so the
-    per-page CSS background-image rules activate.
-    Also injects an inline <style> block as a reliable fallback using a
-    direct class applied to stApp.
-    """
     bg_map = {
         "login":    ("https://images.unsplash.com/photo-1541354329998-f4d9a9f9297f?w=1920&q=80",  "rgba(11,29,58,0.88), rgba(17,34,68,0.82)"),
         "register": ("https://images.unsplash.com/photo-1501167786227-4cba60f6d58f?w=1920&q=80",  "rgba(11,29,58,0.88), rgba(17,34,68,0.82)"),
@@ -668,28 +599,25 @@ def set_page_bg(page_name: str):
         background: transparent !important;
     }}
     </style>
-    <script>
-        const app = window.parent.document.querySelector('.stApp');
-        if (app) app.setAttribute('data-page', '{page_name}');
-    </script>
     """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# HELPER — TOP NAV BAR (shown when logged in)
+# HELPER — TOP NAV BAR
 # ══════════════════════════════════════════════════════════════════════════════
 def render_nav():
-    users = st.session_state["users"]
-    user  = st.session_state["current_user"]
-    role  = st.session_state["current_role"]
-    name  = users[user]["name"] if user else ""
+    user = st.session_state["current_user"]
+    role = st.session_state["current_role"]
+    # Fetch name from DB
+    u = db_get_user(user)
+    name = u["name"] if u else user
 
     cols = st.columns([3, 1, 1, 1] if role == "admin" else [3, 1, 1])
     with cols[0]:
         st.markdown(
             f'<div class="topnav-brand">🏦 Churn Predictor'
-            f'<span style="color:#C0CFDF;font-size:0.85rem;font-family:\'DM Sans\',sans-serif;font-weight:400;margin-left:0.7rem;">'
-            f'Welcome, {name}</span></div>',
+            f'<span style="color:#C0CFDF;font-size:0.85rem;font-family:\'DM Sans\',sans-serif;'
+            f'font-weight:400;margin-left:0.7rem;">Welcome, {name}</span></div>',
             unsafe_allow_html=True,
         )
     with cols[1]:
@@ -708,8 +636,8 @@ def render_nav():
         with cols[3]:
             st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
             if st.button("🚪 Logout", use_container_width=True, key="nav_logout"):
-                for k in ["logged_in","current_user","current_role","page","customer"]:
-                    st.session_state[k] = False if k == "logged_in" else (None if k in ["current_user","current_role"] else ("login" if k == "page" else st.session_state.get(k)))
+                for k in ["logged_in", "current_user", "current_role"]:
+                    st.session_state[k] = False if k == "logged_in" else None
                 st.session_state["page"] = "login"
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -717,7 +645,7 @@ def render_nav():
         with cols[2]:
             st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
             if st.button("🚪 Logout", use_container_width=True, key="nav_logout"):
-                for k in ["logged_in","current_user","current_role","customer"]:
+                for k in ["logged_in", "current_user", "current_role"]:
                     st.session_state[k] = False if k == "logged_in" else None
                 st.session_state["page"] = "login"
                 st.rerun()
@@ -771,7 +699,6 @@ def train_model():
     cm = confusion_matrix(y_te, y_pred)
     return model, scaler, le, feat_names, metrics, cm
 
-# Only train if logged in (avoid slowing down the login page)
 ready = False
 model = scaler = le = feat_names = metrics = cm = None
 if st.session_state["logged_in"]:
@@ -918,17 +845,13 @@ if st.session_state["page"] == "login":
 
         st.markdown('<div class="primary-btn" style="margin-top:1.2rem;">', unsafe_allow_html=True)
         if st.button("Sign In →", use_container_width=True, key="do_login"):
-            # Always reload from file so we never miss newly registered accounts
-            st.session_state["users"] = _load_users()
-            users = st.session_state["users"]
             entered_user = username.strip().lower()
             entered_pw   = password.strip()
-            # Case-insensitive username match
-            matched = next((u for u in users if u.lower() == entered_user), None)
-            if matched and users[matched]["password_hash"] == _hash(entered_pw):
+            user = db_get_user(entered_user)
+            if user and user["password_hash"] == _hash(entered_pw):
                 st.session_state["auth_error"] = ""
                 if remember:
-                    st.session_state["saved_username"] = matched
+                    st.session_state["saved_username"] = entered_user
                     st.session_state["saved_password"] = entered_pw
                     st.session_state["remember_me"]    = True
                 else:
@@ -936,9 +859,9 @@ if st.session_state["page"] == "login":
                     st.session_state["saved_password"] = ""
                     st.session_state["remember_me"]    = False
                 st.session_state["logged_in"]    = True
-                st.session_state["current_user"] = matched
-                st.session_state["current_role"] = users[matched]["role"]
-                st.session_state["page"]         = "admin" if users[matched]["role"] == "admin" else "input"
+                st.session_state["current_user"] = entered_user
+                st.session_state["current_role"] = user["role"]
+                st.session_state["page"] = "admin" if user["role"] == "admin" else "input"
                 st.rerun()
             else:
                 st.session_state["auth_error"] = "Invalid username or password. Check your credentials and try again."
@@ -987,11 +910,10 @@ elif st.session_state["page"] == "register":
 
         st.markdown('<div class="primary-btn" style="margin-top:1.2rem;">', unsafe_allow_html=True)
         if st.button("Create Account →", use_container_width=True, key="do_register"):
-            users = st.session_state["users"]
             if not full_name or not reg_user or not reg_pw:
                 st.session_state["auth_error"] = "All fields are required."
                 st.rerun()
-            elif reg_user in users:
+            elif db_get_user(reg_user.strip().lower()):
                 st.session_state["auth_error"] = f"Username '{reg_user}' is already taken."
                 st.rerun()
             elif len(reg_pw) < 6:
@@ -1001,12 +923,7 @@ elif st.session_state["page"] == "register":
                 st.session_state["auth_error"] = "Passwords do not match."
                 st.rerun()
             else:
-                st.session_state["users"][reg_user] = {
-                    "password_hash": _hash(reg_pw),
-                    "role": "user",
-                    "name": full_name,
-                }
-                _save_users(st.session_state["users"])  # persist to disk
+                db_create_user(reg_user.strip().lower(), reg_pw, full_name)
                 st.session_state["auth_error"] = ""
                 st.session_state["reg_success"] = True
                 st.session_state["page"] = "login"
@@ -1043,9 +960,11 @@ elif st.session_state["page"] == "admin":
     </div>
     """, unsafe_allow_html=True)
 
-    users = st.session_state["users"]
+    # Load users from Supabase
+    users_list = db_get_all_users()
+    users = {u["username"]: u for u in users_list}
 
-    # ── Stats row ──────────────────────────────────────────────────────────
+    # ── Stats row ──────────────────────────────────────────────────────────────
     total    = len(users)
     admins   = sum(1 for u in users.values() if u["role"] == "admin")
     analysts = total - admins
@@ -1058,7 +977,7 @@ elif st.session_state["page"] == "admin":
     with s3:
         st.markdown(f'<div class="mbox"><div class="lbl">Analysts</div><div class="val" style="color:#2ECC8A;">{analysts}</div></div>', unsafe_allow_html=True)
 
-    # ── User list ──────────────────────────────────────────────────────────
+    # ── User list ──────────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">👥 User Accounts</div>', unsafe_allow_html=True)
 
     rows = ""
@@ -1080,7 +999,7 @@ elif st.session_state["page"] == "admin":
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Add new user ───────────────────────────────────────────────────────
+    # ── Add new user ───────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">➕ Add New User</div>', unsafe_allow_html=True)
 
     if st.session_state.get("auth_error"):
@@ -1094,7 +1013,7 @@ elif st.session_state["page"] == "admin":
         ac1, ac2 = st.columns(2)
         with ac1:
             new_name = st.text_input("Full Name", placeholder="e.g. Mary Wanjiku")
-            new_user = st.text_input("Username", placeholder="e.g. mwanjiku")
+            new_user = st.text_input("Username",  placeholder="e.g. mwanjiku")
         with ac2:
             new_pw   = st.text_input("Password", type="password", placeholder="Min 6 chars")
             new_role = st.selectbox("Role", ["user", "admin"])
@@ -1103,22 +1022,18 @@ elif st.session_state["page"] == "admin":
             if not new_name or not new_user or not new_pw:
                 st.session_state["auth_error"] = "All fields required."
                 st.rerun()
-            elif new_user in users:
+            elif new_user.strip().lower() in users:
                 st.session_state["auth_error"] = f"Username '{new_user}' already exists."
                 st.rerun()
             elif len(new_pw) < 6:
                 st.session_state["auth_error"] = "Password must be at least 6 characters."
                 st.rerun()
             else:
-                st.session_state["users"][new_user] = {
-                    "password_hash": _hash(new_pw),
-                    "role": new_role,
-                    "name": new_name,
-                }
+                db_create_user(new_user.strip().lower(), new_pw, new_name, new_role)
                 st.session_state["admin_msg"] = f"User '{new_user}' added successfully."
                 st.rerun()
 
-    # ── Delete user ────────────────────────────────────────────────────────
+    # ── Delete user ────────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">🗑️ Remove User</div>', unsafe_allow_html=True)
 
     deletable = [u for u in users if u != st.session_state["current_user"]]
@@ -1129,15 +1044,15 @@ elif st.session_state["page"] == "admin":
         with del_col2:
             st.markdown('<div style="margin-top:1.8rem;"></div>', unsafe_allow_html=True)
             st.markdown('<div class="danger-btn">', unsafe_allow_html=True)
-            if st.button(f"🗑️ Remove", use_container_width=True, key="do_delete"):
-                del st.session_state["users"][del_target]
+            if st.button("🗑️ Remove", use_container_width=True, key="do_delete"):
+                db_delete_user(del_target)
                 st.session_state["admin_msg"] = f"User '{del_target}' removed."
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.markdown('<p style="color:#C0CFDF;">No other users to remove.</p>', unsafe_allow_html=True)
 
-    # ── Model metrics (if loaded) ──────────────────────────────────────────
+    # ── Model metrics ──────────────────────────────────────────────────────────
     if ready:
         st.markdown('<div class="section-title">📊 Model Performance Metrics</div>', unsafe_allow_html=True)
         mcols = st.columns(len(metrics))
@@ -1145,16 +1060,16 @@ elif st.session_state["page"] == "admin":
             with mcols[i]:
                 st.markdown(f'<div class="mbox"><div class="lbl">{k}</div><div class="val">{v:.1%}</div></div>', unsafe_allow_html=True)
 
-    # ── Prediction Report ──────────────────────────────────────────────────
+    # ── Prediction Report ──────────────────────────────────────────────────────
     st.markdown('<div class="section-title">📥 Customer Prediction Report</div>', unsafe_allow_html=True)
 
-    log = st.session_state.get("prediction_log", [])
+    log = db_get_prediction_log()
+
     if not log:
         st.markdown('<p style="color:#C0CFDF;">No predictions have been made yet. Reports will appear here once users run predictions.</p>', unsafe_allow_html=True)
     else:
         log_df = pd.DataFrame(log)
 
-        # Summary stats row
         total_preds  = len(log_df)
         churn_preds  = (log_df["Verdict"] == "CHURN").sum()
         retain_preds = total_preds - churn_preds
@@ -1168,18 +1083,10 @@ elif st.session_state["page"] == "admin":
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Show table
         display_cols = ["timestamp", "user", "Geography", "Gender", "Age", "CreditScore",
                         "Tenure", "Balance", "NumOfProducts", "EstimatedSalary",
                         "Churn Probability", "Verdict"]
         available_cols = [c for c in display_cols if c in log_df.columns]
-        preview_df = log_df[available_cols].copy()
-        preview_df.columns = [c.replace("_", " ").title() for c in available_cols]
-
-        # Colour-code Verdict column
-        def style_verdict(val):
-            color = "#FF5555" if val == "CHURN" else "#2ECC8A"
-            return f"color: {color}; font-weight: bold;"
 
         rows_html = ""
         for _, row in log_df[available_cols].iterrows():
@@ -1207,7 +1114,7 @@ elif st.session_state["page"] == "admin":
         </div>
         """, unsafe_allow_html=True)
 
-        # ── PDF Report Generator (pure matplotlib — no extra dependencies) ──
+        # ── PDF Report Generator ───────────────────────────────────────────────
         def generate_pdf_report(log_records):
             import io, datetime
             import matplotlib
@@ -1216,87 +1123,49 @@ elif st.session_state["page"] == "admin":
             import matplotlib.patches as patches
             from matplotlib.backends.backend_pdf import PdfPages
 
-            # ── Palette ───────────────────────────────────────────────────────
-            NAVY   = "#0B1D3A"
-            CARD   = "#112244"
-            CARD2  = "#0d1e3d"
-            GOLD   = "#C9A84C"
-            GOLD2  = "#FFE08A"
-            WHITE  = "#FFFFFF"
-            MUTED  = "#C0CFDF"
-            RED    = "#E85555"
-            GREEN  = "#2ECC8A"
-            AMBER  = "#FF9933"
-            BORDER = "#3A5A8A"
+            NAVY   = "#0B1D3A"; CARD   = "#112244"; CARD2  = "#0d1e3d"
+            GOLD   = "#C9A84C"; GOLD2  = "#FFE08A"; WHITE  = "#FFFFFF"
+            MUTED  = "#C0CFDF"; RED    = "#E85555"; GREEN  = "#2ECC8A"
+            AMBER  = "#FF9933"; BORDER = "#3A5A8A"
 
-            now_str     = datetime.datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
-            admin_user  = st.session_state.get("current_user", "N/A")
-            admin_name  = st.session_state["users"].get(admin_user, {}).get("name", "N/A")
+            now_str    = datetime.datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
+            admin_user = st.session_state.get("current_user", "N/A")
+            u          = db_get_user(admin_user)
+            admin_name = u["name"] if u else "N/A"
 
             buf = io.BytesIO()
-
-            # A4 in inches
             A4W, A4H = 8.27, 11.69
 
             def styled_fig():
-                fig = plt.figure(figsize=(A4W, A4H), facecolor=NAVY)
-                return fig
+                return plt.figure(figsize=(A4W, A4H), facecolor=NAVY)
 
             def header_bar(fig, page_num, total_pages):
-                """Gold top bar + dark bottom bar on every page."""
-                # top bar
                 ax_top = fig.add_axes([0, 0.965, 1, 0.035])
-                ax_top.set_facecolor(GOLD)
-                ax_top.set_xlim(0,1); ax_top.set_ylim(0,1)
-                ax_top.axis("off")
-                ax_top.text(0.5, 0.45,
-                    "CUSTOMER CHURN PREDICTION REPORT  |  CONFIDENTIAL",
-                    ha="center", va="center", fontsize=7.5,
-                    fontweight="bold", color=NAVY)
-                # bottom bar
+                ax_top.set_facecolor(GOLD); ax_top.set_xlim(0,1); ax_top.set_ylim(0,1); ax_top.axis("off")
+                ax_top.text(0.5, 0.45, "CUSTOMER CHURN PREDICTION REPORT  |  CONFIDENTIAL",
+                    ha="center", va="center", fontsize=7.5, fontweight="bold", color=NAVY)
                 ax_bot = fig.add_axes([0, 0, 1, 0.025])
-                ax_bot.set_facecolor(CARD)
-                ax_bot.set_xlim(0,1); ax_bot.set_ylim(0,1)
-                ax_bot.axis("off")
-                ax_bot.text(0.02, 0.4, f"Generated: {now_str}",
-                    ha="left", va="center", fontsize=6.5, color=MUTED)
-                ax_bot.text(0.98, 0.4, f"Page {page_num} of {total_pages}",
-                    ha="right", va="center", fontsize=6.5, color=MUTED)
+                ax_bot.set_facecolor(CARD); ax_bot.set_xlim(0,1); ax_bot.set_ylim(0,1); ax_bot.axis("off")
+                ax_bot.text(0.02, 0.4, f"Generated: {now_str}", ha="left", va="center", fontsize=6.5, color=MUTED)
+                ax_bot.text(0.98, 0.4, f"Page {page_num} of {total_pages}", ha="right", va="center", fontsize=6.5, color=MUTED)
 
-            # ── count pages: 1 cover + 1 per customer ────────────────────────
             total_pages = 1 + len(log_records)
 
             with PdfPages(buf) as pdf:
-
-                # ════════════════════════════════════════════════════════════
-                # COVER PAGE
-                # ════════════════════════════════════════════════════════════
+                # Cover page
                 fig = styled_fig()
                 header_bar(fig, 1, total_pages)
-
                 ax = fig.add_axes([0.08, 0.06, 0.84, 0.89])
-                ax.set_facecolor(NAVY)
-                ax.set_xlim(0, 1); ax.set_ylim(0, 1)
-                ax.axis("off")
+                ax.set_facecolor(NAVY); ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
 
-                # Title block
-                ax.add_patch(patches.FancyBboxPatch(
-                    (0, 0.72), 1, 0.22,
-                    boxstyle="round,pad=0.01",
-                    facecolor=CARD, edgecolor=GOLD, linewidth=2))
-                ax.text(0.5, 0.90, "Customer Churn Prediction",
-                    ha="center", va="center", fontsize=26,
-                    fontweight="bold", color=GOLD2)
-                ax.text(0.5, 0.80, "Prediction Analysis Report",
-                    ha="center", va="center", fontsize=14, color=MUTED)
-                ax.text(0.5, 0.74, f"Report Date: {now_str}",
-                    ha="center", va="center", fontsize=9, color=MUTED)
+                ax.add_patch(patches.FancyBboxPatch((0, 0.72), 1, 0.22,
+                    boxstyle="round,pad=0.01", facecolor=CARD, edgecolor=GOLD, linewidth=2))
+                ax.text(0.5, 0.90, "Customer Churn Prediction", ha="center", va="center",
+                    fontsize=26, fontweight="bold", color=GOLD2)
+                ax.text(0.5, 0.80, "Prediction Analysis Report", ha="center", va="center", fontsize=14, color=MUTED)
+                ax.text(0.5, 0.74, f"Report Date: {now_str}", ha="center", va="center", fontsize=9, color=MUTED)
+                ax.add_patch(patches.Rectangle((0, 0.715), 1, 0.004, facecolor=GOLD, edgecolor="none"))
 
-                # Gold divider
-                ax.add_patch(patches.Rectangle((0, 0.715), 1, 0.004,
-                    facecolor=GOLD, edgecolor="none"))
-
-                # Meta info table
                 meta_rows = [
                     ("Report Generated By", admin_name),
                     ("Username",            admin_user),
@@ -1305,20 +1174,15 @@ elif st.session_state["page"] == "admin":
                     ("Retain Predicted",    str(sum(1 for r in log_records if r.get("Verdict")=="RETAIN"))),
                     ("Churn Rate",          f"{sum(1 for r in log_records if r.get('Verdict')=='CHURN')/max(len(log_records),1)*100:.1f}%"),
                 ]
-                row_h = 0.072
-                start_y = 0.68
+                row_h = 0.072; start_y = 0.68
                 for i, (label, value) in enumerate(meta_rows):
                     y = start_y - i * row_h
                     bg = CARD if i % 2 == 0 else CARD2
-                    ax.add_patch(patches.Rectangle((0, y - row_h + 0.005),
-                        1, row_h - 0.005, facecolor=bg, edgecolor=BORDER, linewidth=0.4))
-                    ax.text(0.03, y - row_h/2 + 0.003, label,
-                        ha="left", va="center", fontsize=10, color=MUTED)
-                    ax.text(0.97, y - row_h/2 + 0.003, value,
-                        ha="right", va="center", fontsize=10,
-                        fontweight="bold", color=WHITE)
+                    ax.add_patch(patches.Rectangle((0, y - row_h + 0.005), 1, row_h - 0.005,
+                        facecolor=bg, edgecolor=BORDER, linewidth=0.4))
+                    ax.text(0.03, y - row_h/2 + 0.003, label, ha="left", va="center", fontsize=10, color=MUTED)
+                    ax.text(0.97, y - row_h/2 + 0.003, value, ha="right", va="center", fontsize=10, fontweight="bold", color=WHITE)
 
-                # Summary bar chart (churn vs retain)
                 churn_n  = sum(1 for r in log_records if r.get("Verdict")=="CHURN")
                 retain_n = len(log_records) - churn_n
                 chart_y  = start_y - len(meta_rows) * row_h - 0.04
@@ -1329,98 +1193,61 @@ elif st.session_state["page"] == "admin":
                 bars = ax_bar.bar(["Churn", "Retain"], [churn_n, retain_n],
                     color=[RED, GREEN], width=0.45, edgecolor=BORDER, linewidth=0.5)
                 for bar, val in zip(bars, [churn_n, retain_n]):
-                    ax_bar.text(bar.get_x() + bar.get_width()/2,
-                        bar.get_height() + 0.05, str(val),
-                        ha="center", va="bottom", fontsize=11,
-                        fontweight="bold", color=WHITE)
-                ax_bar.set_facecolor(CARD)
+                    ax_bar.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.05,
+                        str(val), ha="center", va="bottom", fontsize=11, fontweight="bold", color=WHITE)
                 ax_bar.tick_params(colors=MUTED, labelsize=9)
                 ax_bar.set_ylabel("Customers", color=MUTED, fontsize=9)
-                ax_bar.yaxis.label.set_color(MUTED)
-                ax_bar.title.set_color(GOLD2)
-                ax_bar.set_title("Prediction Summary", color=GOLD2,
-                    fontsize=11, fontweight="bold", pad=6)
-                ax_bar.set_facecolor(CARD)
-                fig.patch.set_facecolor(NAVY)
+                ax_bar.set_title("Prediction Summary", color=GOLD2, fontsize=11, fontweight="bold", pad=6)
+                ax_bar.set_facecolor(CARD); fig.patch.set_facecolor(NAVY)
+                pdf.savefig(fig, facecolor=NAVY); plt.close(fig)
 
-                pdf.savefig(fig, facecolor=NAVY)
-                plt.close(fig)
-
-                # ════════════════════════════════════════════════════════════
-                # ONE PAGE PER CUSTOMER
-                # ════════════════════════════════════════════════════════════
+                # One page per customer
                 for idx, rec in enumerate(log_records, 1):
                     prob       = float(rec.get("Churn Probability", 0)) / 100.0
                     verdict    = rec.get("Verdict", "UNKNOWN")
                     will_churn = verdict == "CHURN"
                     v_col      = RED   if will_churn else GREEN
                     v_bg       = "#2a0808" if will_churn else "#062d16"
-                    risk_label = "HIGH RISK"   if prob >= 0.6  else ("MEDIUM RISK" if prob >= 0.35 else "LOW RISK")
-                    risk_col   = RED   if prob >= 0.6  else (AMBER if prob >= 0.35 else GREEN)
+                    risk_label = "HIGH RISK" if prob >= 0.6 else ("MEDIUM RISK" if prob >= 0.35 else "LOW RISK")
+                    risk_col   = RED   if prob >= 0.6 else (AMBER if prob >= 0.35 else GREEN)
 
                     fig = styled_fig()
                     header_bar(fig, idx + 1, total_pages)
-
                     ax = fig.add_axes([0.08, 0.04, 0.84, 0.91])
-                    ax.set_facecolor(NAVY)
-                    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
-                    ax.axis("off")
+                    ax.set_facecolor(NAVY); ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis("off")
+                    y = 0.97
 
-                    y = 0.97  # cursor from top
-
-                    # ── Customer heading ──────────────────────────────────
-                    ax.text(0, y, f"Customer #{idx}",
-                        ha="left", va="top", fontsize=15,
-                        fontweight="bold", color=GOLD2)
+                    ax.text(0, y, f"Customer #{idx}", ha="left", va="top", fontsize=15, fontweight="bold", color=GOLD2)
                     ax.text(1, y, f"Predicted by: {rec.get('user','N/A')}   |   {rec.get('timestamp','N/A')}",
                         ha="right", va="top", fontsize=8, color=MUTED)
                     y -= 0.03
-                    ax.add_patch(patches.Rectangle((0, y), 1, 0.003,
-                        facecolor=GOLD, edgecolor="none"))
+                    ax.add_patch(patches.Rectangle((0, y), 1, 0.003, facecolor=GOLD, edgecolor="none"))
                     y -= 0.02
 
-                    # ── Verdict banner ────────────────────────────────────
                     v_text = "WILL CHURN" if will_churn else "WILL NOT CHURN"
                     v_icon = "✖" if will_churn else "✔"
-                    ax.add_patch(patches.FancyBboxPatch(
-                        (0, y - 0.065), 1, 0.065,
-                        boxstyle="round,pad=0.005",
-                        facecolor=v_bg, edgecolor=v_col, linewidth=1.5))
-                    ax.text(0.5, y - 0.033,
-                        f"{v_icon}  {v_text}",
-                        ha="center", va="center", fontsize=16,
-                        fontweight="bold", color=v_col)
+                    ax.add_patch(patches.FancyBboxPatch((0, y - 0.065), 1, 0.065,
+                        boxstyle="round,pad=0.005", facecolor=v_bg, edgecolor=v_col, linewidth=1.5))
+                    ax.text(0.5, y - 0.033, f"{v_icon}  {v_text}",
+                        ha="center", va="center", fontsize=16, fontweight="bold", color=v_col)
                     y -= 0.08
 
-                    # ── Probability bar ───────────────────────────────────
                     bar_h = 0.048
-                    # background track
-                    ax.add_patch(patches.FancyBboxPatch(
-                        (0, y - bar_h), 1, bar_h,
-                        boxstyle="round,pad=0.002",
-                        facecolor="#1a3560", edgecolor=BORDER, linewidth=0.5))
-                    # filled bar
-                    ax.add_patch(patches.FancyBboxPatch(
-                        (0, y - bar_h), max(prob, 0.005), bar_h,
-                        boxstyle="round,pad=0.002",
-                        facecolor=v_col, edgecolor="none", alpha=0.9))
-                    # threshold line
+                    ax.add_patch(patches.FancyBboxPatch((0, y - bar_h), 1, bar_h,
+                        boxstyle="round,pad=0.002", facecolor="#1a3560", edgecolor=BORDER, linewidth=0.5))
+                    ax.add_patch(patches.FancyBboxPatch((0, y - bar_h), max(prob, 0.005), bar_h,
+                        boxstyle="round,pad=0.002", facecolor=v_col, edgecolor="none", alpha=0.9))
                     ax.plot([0.5, 0.5], [y - bar_h - 0.005, y + 0.005],
                         color=GOLD2, linewidth=1.5, linestyle="--", alpha=0.9)
-                    ax.text(0.5, y + 0.008, "50% threshold",
-                        ha="center", va="bottom", fontsize=7, color=GOLD2)
-                    # prob label inside/outside bar
+                    ax.text(0.5, y + 0.008, "50% threshold", ha="center", va="bottom", fontsize=7, color=GOLD2)
                     lx = min(prob + 0.02, 0.95) if prob < 0.85 else prob - 0.02
                     ax.text(lx, y - bar_h/2, f"{prob*100:.1f}%",
-                        ha="left" if prob < 0.85 else "right",
-                        va="center", fontsize=10, fontweight="bold", color=WHITE)
-                    # x-axis ticks
+                        ha="left" if prob < 0.85 else "right", va="center", fontsize=10, fontweight="bold", color=WHITE)
                     for tick in [0, 0.25, 0.5, 0.75, 1.0]:
                         ax.text(tick, y - bar_h - 0.012, f"{int(tick*100)}%",
                             ha="center", va="top", fontsize=7, color=MUTED)
                     y -= bar_h + 0.045
 
-                    # ── Summary metrics row ───────────────────────────────
                     metrics_items = [
                         ("Churn Probability", f"{prob*100:.1f}%", v_col),
                         ("Verdict",           verdict,            v_col),
@@ -1429,70 +1256,50 @@ elif st.session_state["page"] == "admin":
                     box_w = 0.31; gap = 0.035; box_h = 0.075
                     for mi, (label, value, color) in enumerate(metrics_items):
                         bx = mi * (box_w + gap)
-                        ax.add_patch(patches.FancyBboxPatch(
-                            (bx, y - box_h), box_w, box_h,
-                            boxstyle="round,pad=0.005",
-                            facecolor=CARD, edgecolor=BORDER, linewidth=0.5))
-                        ax.text(bx + box_w/2, y - 0.018, label,
-                            ha="center", va="top", fontsize=7.5, color=MUTED)
+                        ax.add_patch(patches.FancyBboxPatch((bx, y - box_h), box_w, box_h,
+                            boxstyle="round,pad=0.005", facecolor=CARD, edgecolor=BORDER, linewidth=0.5))
+                        ax.text(bx + box_w/2, y - 0.018, label, ha="center", va="top", fontsize=7.5, color=MUTED)
                         ax.text(bx + box_w/2, y - box_h/2 - 0.008, value,
-                            ha="center", va="center", fontsize=13,
-                            fontweight="bold", color=color)
+                            ha="center", va="center", fontsize=13, fontweight="bold", color=color)
                     y -= box_h + 0.03
 
-                    # ── Gold divider ──────────────────────────────────────
-                    ax.add_patch(patches.Rectangle((0, y), 1, 0.002,
-                        facecolor=BORDER, edgecolor="none"))
+                    ax.add_patch(patches.Rectangle((0, y), 1, 0.002, facecolor=BORDER, edgecolor="none"))
                     y -= 0.025
-
-                    # ── Customer Profile ──────────────────────────────────
-                    ax.text(0, y, "Customer Profile",
-                        ha="left", va="top", fontsize=11,
-                        fontweight="bold", color=GOLD)
+                    ax.text(0, y, "Customer Profile", ha="left", va="top", fontsize=11, fontweight="bold", color=GOLD)
                     y -= 0.028
 
                     profile = [
-                        ("Geography",       str(rec.get("Geography","—"))),
-                        ("Gender",          str(rec.get("Gender","—"))),
-                        ("Age",             f"{rec.get('Age','—')} years"),
-                        ("Credit Score",    str(rec.get("CreditScore","—"))),
-                        ("Tenure",          f"{rec.get('Tenure','—')} years"),
-                        ("Account Balance", f"${float(rec.get('Balance',0)):,.0f}"),
-                        ("No. of Products", str(rec.get("NumOfProducts","—"))),
-                        ("Estimated Salary",f"${float(rec.get('EstimatedSalary',0)):,.0f}"),
-                        ("Has Credit Card", "Yes" if rec.get("HasCrCard")==1 else "No"),
-                        ("Active Member",   "Yes" if rec.get("IsActiveMember")==1 else "No"),
+                        ("Geography",        str(rec.get("Geography","—"))),
+                        ("Gender",           str(rec.get("Gender","—"))),
+                        ("Age",              f"{rec.get('Age','—')} years"),
+                        ("Credit Score",     str(rec.get("CreditScore","—"))),
+                        ("Tenure",           f"{rec.get('Tenure','—')} years"),
+                        ("Account Balance",  f"${float(rec.get('Balance',0)):,.0f}"),
+                        ("No. of Products",  str(rec.get("NumOfProducts","—"))),
+                        ("Estimated Salary", f"${float(rec.get('EstimatedSalary',0)):,.0f}"),
+                        ("Has Credit Card",  "Yes" if rec.get("HasCrCard")==1 else "No"),
+                        ("Active Member",    "Yes" if rec.get("IsActiveMember")==1 else "No"),
                     ]
-
-                    row_h = 0.052
-                    col2x = 0.52
+                    row_h = 0.052; col2x = 0.52
                     for ri, (label, value) in enumerate(profile):
-                        col = ri % 2       # 0=left, 1=right
-                        row = ri // 2
+                        col = ri % 2; row = ri // 2
                         rx  = 0 if col == 0 else col2x
                         ry  = y - row * row_h
                         bg  = CARD if (ri // 2) % 2 == 0 else CARD2
-                        ax.add_patch(patches.Rectangle(
-                            (rx, ry - row_h + 0.003), col2x - 0.01, row_h - 0.003,
+                        ax.add_patch(patches.Rectangle((rx, ry - row_h + 0.003), col2x - 0.01, row_h - 0.003,
                             facecolor=bg, edgecolor=BORDER, linewidth=0.3))
-                        ax.text(rx + 0.015, ry - row_h/2 + 0.001, label,
-                            ha="left", va="center", fontsize=8.5, color=MUTED)
+                        ax.text(rx + 0.015, ry - row_h/2 + 0.001, label, ha="left", va="center", fontsize=8.5, color=MUTED)
                         ax.text(rx + col2x - 0.02, ry - row_h/2 + 0.001, value,
-                            ha="right", va="center", fontsize=8.5,
-                            fontweight="bold", color=WHITE)
+                            ha="right", va="center", fontsize=8.5, fontweight="bold", color=WHITE)
 
                     rows_used = (len(profile) + 1) // 2
                     y -= rows_used * row_h + 0.02
-
-                    # ── Disclaimer ────────────────────────────────────────
-                    ax.add_patch(patches.Rectangle((0, y - 0.03), 1, 0.002,
-                        facecolor=BORDER, edgecolor="none"))
+                    ax.add_patch(patches.Rectangle((0, y - 0.03), 1, 0.002, facecolor=BORDER, edgecolor="none"))
                     ax.text(0.5, y - 0.045,
                         "This prediction is model-based and should be reviewed by an authorised bank analyst.",
                         ha="center", va="top", fontsize=7, color=MUTED, style="italic")
 
-                    pdf.savefig(fig, facecolor=NAVY)
-                    plt.close(fig)
+                    pdf.savefig(fig, facecolor=NAVY); plt.close(fig)
 
             buf.seek(0)
             return buf.read()
@@ -1529,7 +1336,7 @@ elif st.session_state["page"] == "input":
     if not ready:
         st.stop()
 
-    # ── Demographics ──────────────────────────────────────────────────────────
+    # ── Demographics ───────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">👤 Demographics</div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -1537,51 +1344,31 @@ elif st.session_state["page"] == "input":
     with c2:
         gender = st.selectbox("Gender", ["— select —", "Female", "Male"])
     with c3:
-        age = st.number_input(
-            "Age (18 - 92)",
-            min_value=0, max_value=92,
-            value=None, step=1,
-            placeholder="e.g. 42",
-        )
+        age = st.number_input("Age (18 - 92)", min_value=0, max_value=92,
+            value=None, step=1, placeholder="e.g. 42")
     st.markdown("<hr style='border-color:#1e3a5a;margin:1.2rem 0;'>", unsafe_allow_html=True)
 
-    # ── Account Details ───────────────────────────────────────────────────────
+    # ── Account Details ────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">🏦 Account Details</div>', unsafe_allow_html=True)
     c4, c5, c6 = st.columns(3)
     with c4:
-        credit_score = st.number_input(
-            "Credit Score (300 - 850)",
-            min_value=0, max_value=850,
-            value=None, step=1,
-            placeholder="e.g. 650",
-        )
+        credit_score = st.number_input("Credit Score (300 - 850)", min_value=0, max_value=850,
+            value=None, step=1, placeholder="e.g. 650")
     with c5:
-        tenure = st.number_input(
-            "Tenure (years, 0 - 10)",
-            min_value=0, max_value=10,
-            value=None, step=1,
-            placeholder="e.g. 3",
-        )
+        tenure = st.number_input("Tenure (years, 0 - 10)", min_value=0, max_value=10,
+            value=None, step=1, placeholder="e.g. 3")
     with c6:
         num_products = st.selectbox("Number of Products", ["— select —", 1, 2, 3, 4])
     c7, c8 = st.columns(2)
     with c7:
-        balance = st.number_input(
-            "Account Balance ($)",
-            min_value=0.0, max_value=300_000.0,
-            value=None, step=500.0,
-            placeholder="e.g. 125000.00",
-        )
+        balance = st.number_input("Account Balance ($)", min_value=0.0, max_value=300_000.0,
+            value=None, step=500.0, placeholder="e.g. 125000.00")
     with c8:
-        estimated_sal = st.number_input(
-            "Estimated Salary ($)",
-            min_value=0.0, max_value=250_000.0,
-            value=None, step=500.0,
-            placeholder="e.g. 80000.00",
-        )
+        estimated_sal = st.number_input("Estimated Salary ($)", min_value=0.0, max_value=250_000.0,
+            value=None, step=500.0, placeholder="e.g. 80000.00")
     st.markdown("<hr style='border-color:#1e3a5a;margin:1.2rem 0;'>", unsafe_allow_html=True)
 
-    # ── Engagement ────────────────────────────────────────────────────────────
+    # ── Engagement ─────────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">📲 Engagement</div>', unsafe_allow_html=True)
     c9, c10 = st.columns(2)
     with c9:
@@ -1590,18 +1377,18 @@ elif st.session_state["page"] == "input":
         is_active = st.radio("Is Active Member?", ["— select —", "Yes", "No"], horizontal=True)
     st.markdown("<hr style='border-color:#1e3a5a;margin:1.2rem 0;'>", unsafe_allow_html=True)
 
-    # ── Validation ────────────────────────────────────────────────────────────
+    # ── Validation ─────────────────────────────────────────────────────────────
     missing = []
-    if geography == "— select —":    missing.append("Geography")
-    if gender    == "— select —":    missing.append("Gender")
-    if age       is None:            missing.append("Age")
+    if geography    == "— select —": missing.append("Geography")
+    if gender       == "— select —": missing.append("Gender")
+    if age          is None:         missing.append("Age")
     if credit_score is None:         missing.append("Credit Score")
-    if tenure    is None:            missing.append("Tenure")
+    if tenure       is None:         missing.append("Tenure")
     if num_products == "— select —": missing.append("Number of Products")
-    if balance   is None:            missing.append("Account Balance")
+    if balance      is None:         missing.append("Account Balance")
     if estimated_sal is None:        missing.append("Estimated Salary")
-    if has_cr_card == "— select —":  missing.append("Has Credit Card")
-    if is_active  == "— select —":   missing.append("Is Active Member")
+    if has_cr_card  == "— select —": missing.append("Has Credit Card")
+    if is_active    == "— select —": missing.append("Is Active Member")
     if credit_score is not None and credit_score < 300:
         missing.append("Credit Score must be at least 300")
 
@@ -1612,7 +1399,6 @@ elif st.session_state["page"] == "input":
             unsafe_allow_html=True,
         )
 
-    # ── Predict button ────────────────────────────────────────────────────────
     st.markdown('<div class="predict-btn">', unsafe_allow_html=True)
     predict_clicked = st.button(
         "🔍  Predict Customer Churn",
@@ -1638,21 +1424,20 @@ elif st.session_state["page"] == "input":
         st.session_state["customer"] = customer_data
         if ready:
             _prob, _churn = run_predict(customer_data)
-            st.session_state["prediction_log"].append({
-                "user":            st.session_state["current_user"],
-                "timestamp":       datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "Geography":       geography,
-                "Gender":          gender,
-                "Age":             int(age),
-                "CreditScore":     int(credit_score),
-                "Tenure":          int(tenure),
-                "Balance":         float(balance),
-                "NumOfProducts":   int(num_products),
-                "HasCrCard":       1 if has_cr_card == "Yes" else 0,
-                "IsActiveMember":  1 if is_active   == "Yes" else 0,
-                "EstimatedSalary": float(estimated_sal),
-                "Churn Probability": round(_prob * 100, 2),
-                "Verdict":         "CHURN" if _churn else "RETAIN",
+            db_log_prediction({
+                "username":         st.session_state["current_user"],
+                "geography":        geography,
+                "gender":           gender,
+                "age":              int(age),
+                "credit_score":     int(credit_score),
+                "tenure":           int(tenure),
+                "balance":          float(balance),
+                "num_products":     int(num_products),
+                "has_cr_card":      1 if has_cr_card == "Yes" else 0,
+                "is_active_member": 1 if is_active   == "Yes" else 0,
+                "estimated_salary": float(estimated_sal),
+                "churn_probability": round(_prob * 100, 2),
+                "verdict":          "CHURN" if _churn else "RETAIN",
             })
         st.session_state["page"] = "results"
         st.rerun()
@@ -1695,9 +1480,8 @@ elif st.session_state["page"] == "results":
     </div>
     """, unsafe_allow_html=True)
 
-    # ── VERDICT ───────────────────────────────────────────────────────────────
+    # ── VERDICT ────────────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">🔎 Churn Verdict</div>', unsafe_allow_html=True)
-
     col_v, col_p = st.columns([1, 1.5], gap="large")
 
     with col_v:
@@ -1732,7 +1516,7 @@ elif st.session_state["page"] == "results":
         with m3: st.markdown(f'<div class="mbox"><div class="lbl">Risk Level</div><div class="val" style="font-size:1.2rem;color:{risk_col};">{risk_label}</div></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── EXPLANATION ───────────────────────────────────────────────────────────
+    # ── EXPLANATION ────────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">📋 Why This Prediction?</div>', unsafe_allow_html=True)
     st.markdown('<p style="color:#C0CFDF;font-size:1rem;font-weight:500;margin-bottom:1.2rem;">Each factor below shows how this customer\'s profile influenced the prediction.</p>', unsafe_allow_html=True)
 
@@ -1746,7 +1530,7 @@ elif st.session_state["page"] == "results":
         for ftype, ftext in factors[half:]:
             st.markdown(f'<div class="{css_map[ftype]}">{ftext}</div>', unsafe_allow_html=True)
 
-    # ── RECOMMENDATION ────────────────────────────────────────────────────────
+    # ── RECOMMENDATION ─────────────────────────────────────────────────────────
     st.markdown('<div class="section-title">💡 Retention Recommendation</div>', unsafe_allow_html=True)
     rec_color = "#E85555" if will_churn else "#3DBE8A"
     rec_items = []
@@ -1779,7 +1563,7 @@ elif st.session_state["page"] == "results":
         st.markdown(f'<div class="rec-item">{item}</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── CUSTOMER SUMMARY ──────────────────────────────────────────────────────
+    # ── CUSTOMER SUMMARY ───────────────────────────────────────────────────────
     st.markdown('<div class="section-title">👤 Customer Profile Summary</div>', unsafe_allow_html=True)
     c = customer
     t1, t2 = st.columns(2, gap="large")
