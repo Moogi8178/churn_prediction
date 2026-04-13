@@ -786,12 +786,6 @@ def build_explanation(c):
         factors.append(("safe","🟢 Two Products — Holding 2 products is strongly associated with retention."))
     else:
         factors.append(("warn",f"🟡 {c['NumOfProducts']} Products — 3+ products sometimes indicates over-commitment and hidden churn risk."))
-    if c["Geography"] == "Germany":
-        factors.append(("risk","🔴 Geography: Germany — German customers have the highest churn rate (~32%)."))
-    elif c["Geography"] == "Spain":
-        factors.append(("warn","🟡 Geography: Spain — Spanish customers show moderate churn rates (~17%)."))
-    else:
-        factors.append(("safe","🟢 Geography: France — French customers show the lowest churn rate (~16%)."))
     if c["CreditScore"] < 500:
         factors.append(("risk",f"🔴 Credit Score ({c['CreditScore']}) — A low score suggests financial stress, linked to higher churn."))
     elif c["CreditScore"] >= 700:
@@ -1203,10 +1197,9 @@ elif st.session_state["page"] == "input":
     # Demographics
     st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">👤 Demographics</div>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    with c1: geography = st.selectbox("Geography", ["", "France","Germany","Spain"])
-    with c2: gender    = st.selectbox("Gender", ["", "Female","Male"])
-    with c3: age       = st.number_input("Age", min_value=0, max_value=92, value=0, step=1)
+    c1, c2 = st.columns(2)
+    with c1: gender = st.selectbox("Gender", ["", "Female","Male"])
+    with c2: age    = st.number_input("Age", min_value=0, max_value=92, value=0, step=1)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # Account details
@@ -1235,8 +1228,6 @@ elif st.session_state["page"] == "input":
         import datetime
         # Validate required fields
         validation_errors = []
-        if not geography:
-            validation_errors.append("Geography is required.")
         if not gender:
             validation_errors.append("Gender is required.")
         if age == 0:
@@ -1252,7 +1243,7 @@ elif st.session_state["page"] == "input":
         else:
             customer_data = {
                 "CreditScore":     credit_score,
-                "Geography":       geography,
+                "Geography":       "France",
                 "Gender":          gender,
                 "Age":             age,
                 "Tenure":          tenure,
@@ -1269,7 +1260,6 @@ elif st.session_state["page"] == "input":
                 st.session_state["prediction_log"].append({
                     "user":      st.session_state["current_user"],
                     "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "Geography": geography,
                     "Gender":    gender,
                     "Age":       age,
                     "CreditScore": credit_score,
@@ -1384,8 +1374,6 @@ elif st.session_state["page"] == "results":
             rec_items.append("📲 Launch an immediate re-engagement campaign — a personalised call or email from a relationship manager.")
         if customer["NumOfProducts"] == 1:
             rec_items.append("🎁 Offer a cross-sell incentive such as a credit card, savings plan, or mortgage consultation.")
-        if customer["Geography"] == "Germany":
-            rec_items.append("🌍 Review Germany-specific pricing and service offerings — competitive pressure is highest in this region.")
         if customer["Age"] >= 50:
             rec_items.append("👴 Consider a senior loyalty programme or preferential interest rates tailored to this age group.")
         if customer["Tenure"] <= 1:
@@ -1415,7 +1403,6 @@ elif st.session_state["page"] == "results":
     with t1:
         st.markdown(f"""
         <table class="summary-table">
-          <tr><td>Geography</td><td>{c['Geography']}</td></tr>
           <tr><td>Gender</td><td>{c['Gender']}</td></tr>
           <tr><td>Age</td><td>{c['Age']} years</td></tr>
           <tr><td>Credit Score</td><td>{c['CreditScore']}</td></tr>
