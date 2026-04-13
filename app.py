@@ -1250,7 +1250,6 @@ elif st.session_state["page"] == "input":
             for err in validation_errors:
                 st.markdown(f'<div class="alert-error">⚠️ {err}</div>', unsafe_allow_html=True)
         else:
-        else:
             customer_data = {
                 "CreditScore":     credit_score,
                 "Geography":       geography,
