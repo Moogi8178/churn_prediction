@@ -3,4 +3,8 @@ numpy
 pandas
 matplotlib
 scikit-learn
+tensorflow
+pytorch-tabnet
+torch
+joblib
 reportlab
