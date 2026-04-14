@@ -1,5 +1,6 @@
-scikit-learn
-pandas
+streamlit
 numpy
+pandas
 matplotlib
-supabase
+scikit-learn
+reportlab
