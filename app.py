@@ -8,18 +8,44 @@ import numpy as np
 import pandas as pd
 import hashlib
 import io
+import os
+import warnings
+warnings.filterwarnings("ignore")
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.gridspec import GridSpec
-from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
     f1_score, roc_auc_score, confusion_matrix, roc_curve,
 )
+from sklearn.utils.class_weight import compute_class_weight
+import joblib
+
+# ── Model backend imports ─────────────────────────────────────────────────────
+_TF_AVAILABLE = False
+_TABNET_AVAILABLE = False
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential, load_model
+    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
+    from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+    from tensorflow.keras.optimizers import Adam
+    tf.random.set_seed(42)
+    _TF_AVAILABLE = True
+except Exception:
+    pass
+
+try:
+    from pytorch_tabnet.tab_model import TabNetClassifier
+    import torch
+    torch.manual_seed(42)
+    _TABNET_AVAILABLE = True
+except Exception:
+    pass
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -694,7 +720,7 @@ def render_nav():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MODEL TRAINING
+# MODEL TRAINING  —  ANN + TabNet ensemble (6 features, matching churn_prediction2.py)
 # ══════════════════════════════════════════════════════════════════════════════
 DATA_URL = (
     "https://gist.githubusercontent.com/arjunrao796123/"
@@ -702,33 +728,130 @@ DATA_URL = (
     "733351a9f0e58e194bfe4d6c21253cdf186c7b90/Churn_data.csv"
 )
 
+# The exact 6 features selected in churn_prediction2.py
+SELECTED_FEATURES = ["Age", "Balance", "CreditScore", "EstimatedSalary",
+                     "NumOfProducts", "IsActiveMember"]
+
+np.random.seed(42)
+
+
 @st.cache_data(show_spinner=False)
 def load_data():
     return pd.read_csv(DATA_URL)
 
+
+def _build_ann(input_dim):
+    """Recreate the exact ANN architecture from churn_prediction2.py."""
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
+    from tensorflow.keras.optimizers import Adam
+    model = Sequential([
+        Dense(64, activation="relu", input_dim=input_dim),
+        BatchNormalization(),
+        Dropout(0.3),
+        Dense(32, activation="relu"),
+        BatchNormalization(),
+        Dropout(0.2),
+        Dense(16, activation="relu"),
+        Dropout(0.1),
+        Dense(1, activation="sigmoid"),
+    ])
+    model.compile(optimizer=Adam(learning_rate=0.001),
+                  loss="binary_crossentropy", metrics=["accuracy"])
+    return model
+
+
 @st.cache_resource(show_spinner=False)
 def train_model():
     df = load_data()
-    drop_cols = [c for c in ["RowNumber","CustomerId","Surname"] if c in df.columns]
-    df = df.drop(columns=drop_cols).rename(columns={"Churn":"Exited"})
+    drop_cols = [c for c in ["RowNumber", "CustomerId", "Surname"] if c in df.columns]
+    df = df.drop(columns=drop_cols).rename(columns={"Churn": "Exited"})
+
+    # Encode Gender / Geography exactly as in churn_prediction2.py
     le = LabelEncoder()
-    df["Gender"] = le.fit_transform(df["Gender"])
-    df = pd.get_dummies(df, columns=["Geography"], drop_first=False)
-    for c in df.select_dtypes(include="bool").columns:
-        df[c] = df[c].astype(int)
+    df["Gender"]    = le.fit_transform(df["Gender"])
+    df["Geography"] = le.fit_transform(df["Geography"])
+
     target = "Exited" if "Exited" in df.columns else df.columns[-1]
-    X, y = df.drop(columns=[target]), df[target]
-    feat_names = X.columns.tolist()
-    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.20, random_state=42, stratify=y)
+    X = df[SELECTED_FEATURES]
+    y = df[target]
+
+    X_tr, X_te, y_tr, y_te = train_test_split(
+        X, y, test_size=0.20, random_state=42, stratify=y
+    )
+
     scaler = StandardScaler()
     X_tr_sc = scaler.fit_transform(X_tr)
     X_te_sc = scaler.transform(X_te)
-    model = GradientBoostingClassifier(
-        n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.8, random_state=42
-    )
-    model.fit(X_tr_sc, y_tr)
-    y_pred  = model.predict(X_te_sc)
-    y_proba = model.predict_proba(X_te_sc)[:, 1]
+
+    # ── Class weights for imbalanced data ────────────────────────────────────
+    from sklearn.utils.class_weight import compute_class_weight
+    cw = compute_class_weight("balanced", classes=np.unique(y_tr), y=y_tr)
+    cw_dict = {0: cw[0], 1: cw[1]}
+
+    ann_model = tabnet_model = None
+    y_proba_ann = y_proba_tab = None
+
+    # ── Train ANN ─────────────────────────────────────────────────────────────
+    if _TF_AVAILABLE:
+        from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+        ann_model = _build_ann(input_dim=len(SELECTED_FEATURES))
+        early_stop = EarlyStopping(monitor="val_loss", patience=15,
+                                    restore_best_weights=True, verbose=0)
+        reduce_lr  = ReduceLROnPlateau(monitor="val_loss", factor=0.5,
+                                        patience=7, min_lr=1e-6, verbose=0)
+        ann_model.fit(
+            X_tr_sc, y_tr,
+            epochs=150, batch_size=32, validation_split=0.2,
+            class_weight=cw_dict,
+            callbacks=[early_stop, reduce_lr],
+            verbose=0,
+        )
+        y_proba_ann = ann_model.predict(X_te_sc, verbose=0).flatten()
+
+    # ── Train TabNet ──────────────────────────────────────────────────────────
+    if _TABNET_AVAILABLE:
+        from pytorch_tabnet.tab_model import TabNetClassifier
+        import torch
+        X_tr_np = X_tr_sc.astype(np.float32)
+        X_te_np = X_te_sc.astype(np.float32)
+        y_tr_np = y_tr.values.astype(int)
+        X_tv, X_val, y_tv, y_val = train_test_split(
+            X_tr_np, y_tr_np, test_size=0.2, random_state=42, stratify=y_tr_np
+        )
+        tabnet_model = TabNetClassifier(
+            n_d=16, n_a=16, n_steps=5, gamma=1.5,
+            n_independent=2, n_shared=2, momentum=0.02,
+            epsilon=1e-15, seed=42, verbose=0, device_name="cpu",
+            optimizer_fn=torch.optim.Adam,
+            optimizer_params=dict(lr=2e-2, weight_decay=1e-5),
+            scheduler_fn=torch.optim.lr_scheduler.StepLR,
+            scheduler_params={"step_size": 10, "gamma": 0.9},
+        )
+        tabnet_model.fit(
+            X_tv, y_tv,
+            eval_set=[(X_val, y_val)],
+            eval_name=["val"], eval_metric=["auc"],
+            max_epochs=100, patience=15,
+            batch_size=256, virtual_batch_size=128,
+            weights=1,
+        )
+        y_proba_tab = tabnet_model.predict_proba(X_te_sc.astype(np.float32))[:, 1]
+
+    # ── Ensemble / fallback ───────────────────────────────────────────────────
+    if y_proba_ann is not None and y_proba_tab is not None:
+        y_proba = (y_proba_ann + y_proba_tab) / 2.0
+        model_name = "ANN + TabNet Ensemble"
+    elif y_proba_ann is not None:
+        y_proba = y_proba_ann
+        model_name = "ANN with Dropout"
+    elif y_proba_tab is not None:
+        y_proba = y_proba_tab
+        model_name = "TabNet"
+    else:
+        raise RuntimeError("Neither TensorFlow nor pytorch-tabnet is available.")
+
+    y_pred = (y_proba >= 0.5).astype(int)
     metrics = {
         "Accuracy":  round(accuracy_score(y_te, y_pred),  4),
         "Precision": round(precision_score(y_te, y_pred), 4),
@@ -737,34 +860,58 @@ def train_model():
         "AUC-ROC":   round(roc_auc_score(y_te, y_proba),  4),
     }
     cm = confusion_matrix(y_te, y_pred)
-    return model, scaler, le, feat_names, metrics, cm, y_te, y_proba
+    return (ann_model, tabnet_model, scaler, SELECTED_FEATURES,
+            metrics, cm, y_te, y_proba, model_name)
+
 
 # Only train if logged in (avoid slowing down the login page)
 ready = False
-model = scaler = le = feat_names = metrics = cm = y_te_global = y_proba_global = None
+ann_model = tabnet_model = scaler = feat_names = None
+metrics = cm = y_te_global = y_proba_global = None
+model_name_global = "ANN + TabNet Ensemble"
+
 if st.session_state["logged_in"]:
-    with st.spinner("🔄 Loading model — first run takes ~20 seconds…"):
+    with st.spinner("🔄 Loading model — first run takes ~30 seconds…"):
         try:
-            model, scaler, le, feat_names, metrics, cm, y_te_global, y_proba_global = train_model()
+            (ann_model, tabnet_model, scaler, feat_names,
+             metrics, cm, y_te_global, y_proba_global, model_name_global) = train_model()
             ready = True
         except Exception as e:
             st.error(f"Model training failed: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PREDICTION LOGIC
+# PREDICTION LOGIC  —  uses 6-feature ANN + TabNet ensemble
 # ══════════════════════════════════════════════════════════════════════════════
 def run_predict(customer):
-    df = pd.DataFrame([customer])
-    df["Gender"] = le.transform(df["Gender"])
-    df = pd.get_dummies(df, columns=["Geography"], drop_first=False)
-    for c in df.select_dtypes(include="bool").columns:
-        df[c] = df[c].astype(int)
-    for c in feat_names:
-        if c not in df.columns:
-            df[c] = 0
-    X_sc = scaler.transform(df[feat_names])
-    prob = float(model.predict_proba(X_sc)[0][1])
+    """
+    Accepts a customer dict with keys matching the input form.
+    Uses only the 6 SELECTED_FEATURES the model was trained on.
+    Returns (probability_float, will_churn_bool).
+    """
+    row = {
+        "Age":             customer["Age"],
+        "Balance":         customer["Balance"],
+        "CreditScore":     customer["CreditScore"],
+        "EstimatedSalary": customer["EstimatedSalary"],
+        "NumOfProducts":   customer["NumOfProducts"],
+        "IsActiveMember":  customer["IsActiveMember"],
+    }
+    X = np.array([[row[f] for f in SELECTED_FEATURES]], dtype=np.float32)
+    X_sc = scaler.transform(X)
+
+    probas = []
+    if ann_model is not None:
+        p_ann = float(ann_model.predict(X_sc, verbose=0).flatten()[0])
+        probas.append(p_ann)
+    if tabnet_model is not None:
+        p_tab = float(tabnet_model.predict_proba(X_sc.astype(np.float32))[0][1])
+        probas.append(p_tab)
+
+    if not probas:
+        raise RuntimeError("No model available for prediction.")
+
+    prob = float(np.mean(probas))
     return prob, prob >= 0.50
 
 
@@ -1015,7 +1162,7 @@ def generate_pdf_report(log, metrics_dict, cm, y_te, y_proba):
         ["Predicted to Churn", str(churn_p)],
         ["Predicted to Retain", str(retain_p)],
         ["Churn Rate", f"{churn_r:.1f}%"],
-        ["Model Type", "Gradient Boosting Classifier"],
+        ["Model Type", model_name_global],
     ]
     if metrics_dict:
         for k, v in metrics_dict.items():
