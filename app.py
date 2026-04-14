@@ -7,15 +7,18 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import hashlib
+import io
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.gridspec import GridSpec
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score,
-    f1_score, roc_auc_score, confusion_matrix,
+    f1_score, roc_auc_score, confusion_matrix, roc_curve,
 )
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -734,15 +737,15 @@ def train_model():
         "AUC-ROC":   round(roc_auc_score(y_te, y_proba),  4),
     }
     cm = confusion_matrix(y_te, y_pred)
-    return model, scaler, le, feat_names, metrics, cm
+    return model, scaler, le, feat_names, metrics, cm, y_te, y_proba
 
 # Only train if logged in (avoid slowing down the login page)
 ready = False
-model = scaler = le = feat_names = metrics = cm = None
+model = scaler = le = feat_names = metrics = cm = y_te_global = y_proba_global = None
 if st.session_state["logged_in"]:
     with st.spinner("🔄 Loading model — first run takes ~20 seconds…"):
         try:
-            model, scaler, le, feat_names, metrics, cm = train_model()
+            model, scaler, le, feat_names, metrics, cm, y_te_global, y_proba_global = train_model()
             ready = True
         except Exception as e:
             st.error(f"Model training failed: {e}")
@@ -836,6 +839,359 @@ def prob_bar_fig(prob, will_churn):
             va="center", color=color, fontsize=12, fontweight="bold")
     plt.tight_layout(pad=0.2)
     return fig
+
+
+# ── Model Performance Charts ──────────────────────────────────────────────────
+def metrics_bar_chart(metrics_dict):
+    """Horizontal bar chart of all model metrics."""
+    fig, ax = plt.subplots(figsize=(7, 3.2), facecolor="#112244")
+    ax.set_facecolor("#112244")
+    names  = list(metrics_dict.keys())
+    values = [v * 100 for v in metrics_dict.values()]
+    colors = ["#2ECC8A", "#C9A84C", "#5B9CF6", "#FF9933", "#E85555"]
+    bars = ax.barh(names, values, color=colors[:len(names)], height=0.55, edgecolor="none")
+    for bar, val in zip(bars, values):
+        ax.text(bar.get_width() + 0.5, bar.get_y() + bar.get_height()/2,
+                f"{val:.1f}%", va="center", ha="left", color="#FFFFFF",
+                fontsize=10, fontweight="bold")
+    ax.set_xlim(0, 110)
+    ax.set_xlabel("Score (%)", color="#C0CFDF", fontsize=10)
+    ax.tick_params(colors="#C0CFDF", labelsize=10)
+    ax.xaxis.label.set_color("#C0CFDF")
+    for spine in ax.spines.values(): spine.set_color("#3A5A8A")
+    ax.set_title("Model Metrics Overview", color="#FFE08A", fontsize=12, fontweight="bold", pad=10)
+    plt.tight_layout(pad=0.5)
+    return fig
+
+
+def confusion_matrix_chart(cm):
+    """Styled confusion matrix heatmap."""
+    fig, ax = plt.subplots(figsize=(4.5, 3.8), facecolor="#112244")
+    ax.set_facecolor("#112244")
+    cmap_data = np.array([[cm[0,0], cm[0,1]], [cm[1,0], cm[1,1]]])
+    im = ax.imshow(cmap_data, cmap="Blues", aspect="auto")
+    labels = [["TN", "FP"], ["FN", "TP"]]
+    label_colors = [["#2ECC8A","#E85555"],["#E85555","#2ECC8A"]]
+    for i in range(2):
+        for j in range(2):
+            ax.text(j, i, f"{labels[i][j]}\n{cmap_data[i,j]:,}",
+                    ha="center", va="center",
+                    color=label_colors[i][j], fontsize=13, fontweight="bold")
+    ax.set_xticks([0,1]); ax.set_yticks([0,1])
+    ax.set_xticklabels(["Predicted\nRetain","Predicted\nChurn"], color="#C0CFDF", fontsize=9)
+    ax.set_yticklabels(["Actual\nRetain","Actual\nChurn"], color="#C0CFDF", fontsize=9)
+    ax.set_title("Confusion Matrix", color="#FFE08A", fontsize=12, fontweight="bold", pad=10)
+    for spine in ax.spines.values(): spine.set_color("#3A5A8A")
+    plt.tight_layout(pad=0.5)
+    return fig
+
+
+def roc_curve_chart(y_true, y_scores):
+    """ROC curve with AUC annotation."""
+    fpr, tpr, _ = roc_curve(y_true, y_scores)
+    auc = roc_auc_score(y_true, y_scores)
+    fig, ax = plt.subplots(figsize=(4.5, 3.8), facecolor="#112244")
+    ax.set_facecolor("#112244")
+    ax.plot(fpr, tpr, color="#C9A84C", lw=2.5, label=f"AUC = {auc:.4f}")
+    ax.plot([0,1],[0,1], color="#3A5A8A", lw=1.5, linestyle="--", label="Random Classifier")
+    ax.fill_between(fpr, tpr, alpha=0.15, color="#C9A84C")
+    ax.set_xlabel("False Positive Rate", color="#C0CFDF", fontsize=10)
+    ax.set_ylabel("True Positive Rate", color="#C0CFDF", fontsize=10)
+    ax.set_title("ROC Curve", color="#FFE08A", fontsize=12, fontweight="bold", pad=10)
+    ax.tick_params(colors="#C0CFDF", labelsize=9)
+    ax.set_xlim(0,1); ax.set_ylim(0,1.02)
+    legend = ax.legend(loc="lower right", fontsize=9, facecolor="#1a3560",
+                       edgecolor="#3A5A8A", labelcolor="#FFFFFF")
+    for spine in ax.spines.values(): spine.set_color("#3A5A8A")
+    plt.tight_layout(pad=0.5)
+    return fig
+
+
+# ── PDF Report Generator ──────────────────────────────────────────────────────
+def generate_pdf_report(log, metrics_dict, cm, y_te, y_proba):
+    """
+    Build a multi-page PDF report:
+    - Cover page with summary stats
+    - Model performance page (metrics bar, confusion matrix, ROC)
+    - One page per prediction with churn probability chart
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm as rcm
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                    Table, TableStyle, PageBreak, Image as RLImage,
+                                    HRFlowable)
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=1.8*rcm, rightMargin=1.8*rcm,
+                            topMargin=2*rcm, bottomMargin=2*rcm)
+
+    # ── Colour palette
+    NAVY   = colors.HexColor("#0B1D3A")
+    CARD   = colors.HexColor("#112244")
+    GOLD   = colors.HexColor("#C9A84C")
+    GOLD2  = colors.HexColor("#FFE08A")
+    MUTED  = colors.HexColor("#C0CFDF")
+    RED    = colors.HexColor("#E85555")
+    GREEN  = colors.HexColor("#2ECC8A")
+    AMBER  = colors.HexColor("#FF9933")
+    WHITE  = colors.white
+    BORDER = colors.HexColor("#3A5A8A")
+
+    # ── Styles
+    def style(name, **kw):
+        return ParagraphStyle(name, **kw)
+
+    s_title   = style("Title",   fontSize=26, textColor=GOLD2,   fontName="Helvetica-Bold",
+                       alignment=TA_CENTER, spaceAfter=6)
+    s_sub     = style("Sub",     fontSize=11, textColor=MUTED,   fontName="Helvetica",
+                       alignment=TA_CENTER, spaceAfter=4)
+    s_h1      = style("H1",      fontSize=15, textColor=GOLD2,   fontName="Helvetica-Bold",
+                       spaceBefore=14, spaceAfter=6)
+    s_h2      = style("H2",      fontSize=12, textColor=GOLD,    fontName="Helvetica-Bold",
+                       spaceBefore=8, spaceAfter=4)
+    s_body    = style("Body",    fontSize=9,  textColor=WHITE,   fontName="Helvetica",
+                       spaceAfter=3)
+    s_verdict = style("Verdict", fontSize=18, fontName="Helvetica-Bold", alignment=TA_CENTER)
+    s_center  = style("Center",  fontSize=9,  textColor=MUTED,   fontName="Helvetica",
+                       alignment=TA_CENTER)
+
+    def fig_to_rl_image(fig, width_cm=16, height_cm=7):
+        """Save a matplotlib figure to an in-memory PNG and wrap in ReportLab Image."""
+        tmp = io.BytesIO()
+        fig.savefig(tmp, format="png", dpi=150, bbox_inches="tight",
+                    facecolor=fig.get_facecolor())
+        plt.close(fig)
+        tmp.seek(0)
+        img = RLImage(tmp, width=width_cm*rcm, height=height_cm*rcm)
+        return img
+
+    def prob_bar_pdf(prob, will_churn):
+        """Compact horizontal probability bar for PDF (white bg)."""
+        color = "#E85555" if will_churn else "#2ECC8A"
+        fig, ax = plt.subplots(figsize=(6, 0.9), facecolor="#112244")
+        ax.set_facecolor("#112244")
+        ax.barh([0], [1],    color="#1e3a5a", height=0.55, edgecolor="none")
+        ax.barh([0], [prob], color=color,    height=0.55, edgecolor="none")
+        ax.axvline(0.5, color="#FFE08A", lw=1.5, linestyle="--", alpha=0.9)
+        ax.set_xlim(0, 1); ax.set_ylim(-0.6, 0.6); ax.set_yticks([])
+        ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+        ax.set_xticklabels(["0%","25%","50%","75%","100%"], fontsize=8, color="#A8B8D0")
+        for spine in ax.spines.values(): spine.set_visible(False)
+        ax.tick_params(length=0)
+        ax.text(min(prob + 0.02, 0.80), 0, f"{prob*100:.1f}%",
+                va="center", color=color, fontsize=11, fontweight="bold")
+        plt.tight_layout(pad=0.15)
+        tmp = io.BytesIO()
+        fig.savefig(tmp, format="png", dpi=150, bbox_inches="tight",
+                    facecolor="#112244")
+        plt.close(fig)
+        tmp.seek(0)
+        return RLImage(tmp, width=14*rcm, height=1.6*rcm)
+
+    story = []
+
+    # ════════════════════════ COVER PAGE ════════════════════════
+    story.append(Spacer(1, 2*rcm))
+    story.append(Paragraph("🏦 Churn Predictor", s_title))
+    story.append(Paragraph("Customer Churn Prediction Report", s_sub))
+    story.append(Paragraph("Bank Customer Intelligence Platform", s_sub))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=GOLD, spaceAfter=14))
+    story.append(Spacer(1, 0.5*rcm))
+
+    # Summary stats table
+    log_df = pd.DataFrame(log)
+    total_p  = len(log_df)
+    churn_p  = (log_df["Verdict"] == "CHURN").sum()
+    retain_p = total_p - churn_p
+    churn_r  = churn_p / total_p * 100 if total_p else 0
+
+    summary_data = [
+        ["Metric", "Value"],
+        ["Total Predictions", str(total_p)],
+        ["Predicted to Churn", str(churn_p)],
+        ["Predicted to Retain", str(retain_p)],
+        ["Churn Rate", f"{churn_r:.1f}%"],
+        ["Model Type", "Gradient Boosting Classifier"],
+    ]
+    if metrics_dict:
+        for k, v in metrics_dict.items():
+            summary_data.append([f"Model {k}", f"{v:.1%}"])
+
+    summary_table = Table(summary_data, colWidths=[9*rcm, 7*rcm])
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND",  (0,0), (-1,0), CARD),
+        ("TEXTCOLOR",   (0,0), (-1,0), GOLD2),
+        ("FONTNAME",    (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",    (0,0), (-1,-1), 10),
+        ("BACKGROUND",  (0,1), (-1,-1), NAVY),
+        ("TEXTCOLOR",   (0,1), (-1,-1), WHITE),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [NAVY, CARD]),
+        ("GRID",        (0,0), (-1,-1), 0.5, BORDER),
+        ("TOPPADDING",  (0,0), (-1,-1), 6),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 6),
+        ("LEFTPADDING", (0,0), (-1,-1), 12),
+    ]))
+    story.append(summary_table)
+    story.append(PageBreak())
+
+    # ════════════════════════ MODEL PERFORMANCE PAGE ════════════════════════
+    story.append(Paragraph("📊 Model Performance Metrics", s_h1))
+    story.append(HRFlowable(width="100%", thickness=1, color=BORDER, spaceAfter=8))
+
+    if metrics_dict:
+        story.append(Paragraph("Metrics Bar Chart", s_h2))
+        mbar = metrics_bar_chart(metrics_dict)
+        story.append(fig_to_rl_image(mbar, width_cm=16, height_cm=6))
+        story.append(Spacer(1, 0.4*rcm))
+
+    if cm is not None and y_te is not None and y_proba is not None:
+        row_imgs = []
+        cm_fig  = confusion_matrix_chart(cm)
+        roc_fig = roc_curve_chart(y_te, y_proba)
+        cm_img  = fig_to_rl_image(cm_fig,  width_cm=8, height_cm=7)
+        roc_img = fig_to_rl_image(roc_fig, width_cm=8, height_cm=7)
+        side_table = Table([[cm_img, roc_img]], colWidths=[8.5*rcm, 8.5*rcm])
+        side_table.setStyle(TableStyle([
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("LEFTPADDING",  (0,0), (-1,-1), 0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 4),
+        ]))
+        story.append(Paragraph("Confusion Matrix & ROC Curve", s_h2))
+        story.append(side_table)
+
+    story.append(PageBreak())
+
+    # ════════════════════════ PREDICTIONS TABLE (summary) ════════════════════
+    story.append(Paragraph("📋 All Predictions Summary", s_h1))
+    story.append(HRFlowable(width="100%", thickness=1, color=BORDER, spaceAfter=8))
+
+    tbl_cols = ["#", "Timestamp", "User", "Age", "Gender", "CreditScore",
+                "Churn Probability", "Verdict"]
+    avail = ["timestamp","user","Age","Gender","CreditScore","Churn Probability","Verdict"]
+    avail = [c for c in avail if c in log_df.columns]
+
+    header_row = ["#", "Timestamp", "User", "Age", "Gender", "Credit Score", "Churn %", "Verdict"]
+    tbl_data = [header_row]
+    for idx, row in log_df.iterrows():
+        tbl_data.append([
+            str(idx+1),
+            str(row.get("timestamp",""))[:16],
+            str(row.get("user","")),
+            str(row.get("Age","")),
+            str(row.get("Gender","")),
+            str(row.get("CreditScore","")),
+            f"{float(row.get('Churn Probability',0)):.1f}%",
+            str(row.get("Verdict","")),
+        ])
+
+    col_ws = [1.0*rcm, 3.8*rcm, 2.5*rcm, 1.2*rcm, 1.5*rcm, 1.8*rcm, 1.8*rcm, 1.8*rcm]
+    pred_table = Table(tbl_data, colWidths=col_ws, repeatRows=1)
+
+    ts = [
+        ("BACKGROUND",   (0,0), (-1,0), CARD),
+        ("TEXTCOLOR",    (0,0), (-1,0), GOLD2),
+        ("FONTNAME",     (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE",     (0,0), (-1,-1), 8),
+        ("BACKGROUND",   (0,1), (-1,-1), NAVY),
+        ("TEXTCOLOR",    (0,1), (-1,-1), WHITE),
+        ("ROWBACKGROUNDS",(0,1),(-1,-1), [NAVY, CARD]),
+        ("GRID",         (0,0), (-1,-1), 0.4, BORDER),
+        ("TOPPADDING",   (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
+        ("LEFTPADDING",  (0,0), (-1,-1), 5),
+        ("ALIGN",        (0,0), (-1,-1), "CENTER"),
+    ]
+    # Colour CHURN/RETAIN rows
+    for i, row in enumerate(tbl_data[1:], start=1):
+        if row[-1] == "CHURN":
+            ts.append(("TEXTCOLOR", (-1,i), (-1,i), RED))
+            ts.append(("FONTNAME",  (-1,i), (-1,i), "Helvetica-Bold"))
+        else:
+            ts.append(("TEXTCOLOR", (-1,i), (-1,i), GREEN))
+            ts.append(("FONTNAME",  (-1,i), (-1,i), "Helvetica-Bold"))
+
+    pred_table.setStyle(TableStyle(ts))
+    story.append(pred_table)
+    story.append(PageBreak())
+
+    # ════════════════════════ PER-CUSTOMER PAGES ════════════════════════
+    for idx, row in log_df.iterrows():
+        prob       = float(row.get("Churn Probability", 0)) / 100.0
+        will_churn = row.get("Verdict","") == "CHURN"
+        verdict_color = RED if will_churn else GREEN
+        verdict_word  = "CHURN" if will_churn else "RETAIN"
+        risk_label    = "HIGH RISK" if prob >= 0.6 else ("MEDIUM RISK" if prob >= 0.35 else "LOW RISK")
+
+        story.append(Paragraph(f"Customer #{idx+1} — Prediction Detail", s_h1))
+        story.append(HRFlowable(width="100%", thickness=1, color=BORDER, spaceAfter=6))
+
+        # Verdict banner
+        vs = style(f"V{idx}", fontSize=20, fontName="Helvetica-Bold",
+                   alignment=TA_CENTER, textColor=verdict_color)
+        story.append(Paragraph(f"{'⚠️ WILL CHURN' if will_churn else '✅ WILL RETAIN'}  —  {risk_label}", vs))
+        story.append(Spacer(1, 0.3*rcm))
+
+        # Probability bar
+        story.append(Paragraph("Churn Probability Score", s_h2))
+        story.append(prob_bar_pdf(prob, will_churn))
+        story.append(Spacer(1, 0.3*rcm))
+
+        # Customer details table
+        story.append(Paragraph("Customer Profile", s_h2))
+        cdetails = [
+            ["Field", "Value", "Field", "Value"],
+            ["Timestamp",     str(row.get("timestamp",""))[:16],
+             "User",          str(row.get("user",""))],
+            ["Gender",        str(row.get("Gender","")),
+             "Age",           str(row.get("Age",""))],
+            ["Credit Score",  str(row.get("CreditScore","")),
+             "Tenure (yrs)",  str(row.get("Tenure",""))],
+            ["Balance ($)",   f"${float(row.get('Balance',0)):,.0f}",
+             "# Products",    str(row.get("NumOfProducts",""))],
+            ["Est. Salary ($)",f"${float(row.get('EstimatedSalary',0)):,.0f}",
+             "Has Cr. Card",  "Yes" if row.get("HasCrCard",0)==1 else "No"],
+            ["Active Member", "Yes" if row.get("IsActiveMember",0)==1 else "No",
+             "Verdict",       verdict_word],
+        ]
+        det_table = Table(cdetails, colWidths=[4*rcm, 4.5*rcm, 4*rcm, 4.5*rcm])
+        det_ts = [
+            ("BACKGROUND",   (0,0), (-1,0), CARD),
+            ("TEXTCOLOR",    (0,0), (-1,0), GOLD2),
+            ("FONTNAME",     (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",     (0,0), (-1,-1), 9),
+            ("BACKGROUND",   (0,1), (-1,-1), NAVY),
+            ("TEXTCOLOR",    (0,1), (-1,-1), WHITE),
+            ("TEXTCOLOR",    (0,1), (0,-1), MUTED),
+            ("TEXTCOLOR",    (2,1), (2,-1), MUTED),
+            ("FONTNAME",     (0,1), (0,-1), "Helvetica-Bold"),
+            ("FONTNAME",     (2,1), (2,-1), "Helvetica-Bold"),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1), [NAVY, CARD]),
+            ("GRID",         (0,0), (-1,-1), 0.4, BORDER),
+            ("TOPPADDING",   (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING",(0,0), (-1,-1), 5),
+            ("LEFTPADDING",  (0,0), (-1,-1), 8),
+        ]
+        # Highlight verdict cell
+        for r_i in range(1, len(cdetails)):
+            if cdetails[r_i][-1] in ("CHURN","RETAIN"):
+                col = RED if cdetails[r_i][-1] == "CHURN" else GREEN
+                det_ts.append(("TEXTCOLOR", (-1, r_i), (-1, r_i), col))
+                det_ts.append(("FONTNAME",  (-1, r_i), (-1, r_i), "Helvetica-Bold"))
+
+        det_table.setStyle(TableStyle(det_ts))
+        story.append(det_table)
+
+        # Page break between customers (not after last)
+        if idx < len(log_df) - 1:
+            story.append(PageBreak())
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1094,10 +1450,35 @@ elif st.session_state["page"] == "admin":
     # ── Model metrics (if loaded) ──────────────────────────────────────────
     if ready:
         st.markdown('<div class="section-title">📊 Model Performance Metrics</div>', unsafe_allow_html=True)
+
+        # Top metric boxes (kept for quick reference)
         mcols = st.columns(len(metrics))
         for i, (k, v) in enumerate(metrics.items()):
             with mcols[i]:
                 st.markdown(f'<div class="mbox"><div class="lbl">{k}</div><div class="val">{v:.1%}</div></div>', unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Charts row 1: Metrics Bar Chart (full width)
+        st.markdown('<p style="color:#C0CFDF;font-weight:600;font-size:1rem;margin-bottom:0.4rem;">📈 Metrics Overview</p>', unsafe_allow_html=True)
+        fig_mbar = metrics_bar_chart(metrics)
+        st.pyplot(fig_mbar, use_container_width=True)
+        plt.close(fig_mbar)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Charts row 2: Confusion Matrix + ROC Curve side by side
+        gc1, gc2 = st.columns(2, gap="large")
+        with gc1:
+            st.markdown('<p style="color:#C0CFDF;font-weight:600;font-size:1rem;margin-bottom:0.4rem;">🔲 Confusion Matrix</p>', unsafe_allow_html=True)
+            fig_cm = confusion_matrix_chart(cm)
+            st.pyplot(fig_cm, use_container_width=True)
+            plt.close(fig_cm)
+        with gc2:
+            st.markdown('<p style="color:#C0CFDF;font-weight:600;font-size:1rem;margin-bottom:0.4rem;">📉 ROC Curve</p>', unsafe_allow_html=True)
+            fig_roc = roc_curve_chart(y_te_global, y_proba_global)
+            st.pyplot(fig_roc, use_container_width=True)
+            plt.close(fig_roc)
 
     # ── Prediction Report ──────────────────────────────────────────────────
     st.markdown('<div class="section-title">📥 Customer Prediction Report</div>', unsafe_allow_html=True)
@@ -1161,14 +1542,16 @@ elif st.session_state["page"] == "admin":
         </div>
         """, unsafe_allow_html=True)
 
-        # Download CSV button
-        csv_data = log_df[available_cols].to_csv(index=False).encode("utf-8")
+        # Download PDF button
+        pdf_bytes = generate_pdf_report(log, metrics if ready else {}, cm if ready else None,
+                                        y_te_global if ready else None,
+                                        y_proba_global if ready else None)
         st.download_button(
-            label="⬇️ Download Full Report (CSV)",
-            data=csv_data,
-            file_name="churn_prediction_report.csv",
-            mime="text/csv",
-            key="download_report_csv",
+            label="⬇️ Download Full Report (PDF)",
+            data=pdf_bytes,
+            file_name="churn_prediction_report.pdf",
+            mime="application/pdf",
+            key="download_report_pdf",
         )
 
 
