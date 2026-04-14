@@ -4,7 +4,3 @@ pandas
 matplotlib
 scikit-learn
 reportlab
-tensorflow-cpu
-pytorch-tabnet
-torch
-joblib
